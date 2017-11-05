@@ -15,7 +15,7 @@
 #include "dlist.h"
 #include "nmq.h"
 
-#define MAX_SN 100
+#define MAX_SN 1000
 // 模拟网络
 LatencySimulator *vnet;
 
@@ -49,8 +49,8 @@ void test(int mode)
 //	kcp2->output = udp_output;
 
 	IUINT32 current = iclock();
-//	IUINT32 slap = current + 20;
-	IUINT32 slap = current;
+	IUINT32 slap = current + 20;
+//	IUINT32 slap = current;
 	IUINT32 index = 0;
 	IUINT32 next = 0;
 	IINT64 sumrtt = 0;
@@ -94,33 +94,42 @@ void test(int mode)
 	while (1) {
 		isleep(1);
 		current = iclock();
-		fprintf(stderr, "nmq_update 1: ---------------------------------\n");
+//		fprintf(stderr, "nmq_update 1: ---------------------------------\n");
 		nmq_update(kcp1, iclock());
 
-		fprintf(stderr, "nmq_update 2: ---------------------------------\n");
+//		fprintf(stderr, "nmq_update 2: ---------------------------------\n");
 		nmq_update(kcp2, iclock());
 
-		fprintf(stderr, "peer 1 nmq_send: ---------------------------------\n");
+//		fprintf(stderr, "peer 1 nmq_send: ---------------------------------\n");
 		// 每隔 20ms，kcp1发送数据
-		for (int i = 0; (i < 2) && (cnt < MAX_SN); i++) {
-			((IUINT32*)buffer)[0] = cnt;
-			((IUINT32*)buffer)[1] = current;
+//		for (int i = 0; (i < 2) && (cnt < MAX_SN); i++) {
+//			((IUINT32*)buffer)[0] = cnt;
+//			((IUINT32*)buffer)[1] = current;
+//
+////            fprintf(stderr, "current: %u, slap: %u, index: %d\n", current, slap, index);
+//			// 发送上层协议包
+////            fprintf(stderr, "peer 1, nmq_send,\n");
+////            IINT32 ret = nmq_send(kcp1, buffer, 8); caution
+//            IINT32 ret = nmq_send(kcp1, buffer, 8);
+//
+////            nmq_update(kcp1, iclock());
+////            nmq_update(kcp2, iclock());
+//			if (ret > 0) {
+//				 cnt++;
+//			 } else if (ret < 0) {
+//				 break;
+//			 }
+//		}
 
-//            fprintf(stderr, "current: %u, slap: %u, index: %d\n", current, slap, index);
-			// 发送上层协议包
-//            fprintf(stderr, "peer 1, nmq_send,\n");
-            IINT32 ret = nmq_send(kcp1, buffer, 8);
+        for (; current >= slap; slap += 20) {
+            ((IUINT32*)buffer)[0] = index++;
+            ((IUINT32*)buffer)[1] = current;
 
-//            nmq_update(kcp1, iclock());
-//            nmq_update(kcp2, iclock());
-			if (ret > 0) {
-				 cnt++;
-			 } else if (ret < 0) {
-				 break;
-			 }
-		}
+            // 发送上层协议包
+            nmq_send(kcp1, buffer, 8);
+        }
 
-		fprintf(stderr, "peer 1 -> 2 nmq_input: ---------------------------------\n");
+//		fprintf(stderr, "peer 1 -> 2 nmq_input: ---------------------------------\n");
 		// 处理虚拟网络：检测是否有udp包从p1->p2
 		while (1) {
 			hr = vnet->recv(2, buffer, 2000);
@@ -132,7 +141,7 @@ void test(int mode)
 //            nmq_update(kcp2, iclock());
 		}
 
-		fprintf(stderr, "peer 2 -> 1 nmq_input: ---------------------------------\n");
+//		fprintf(stderr, "peer 2 -> 1 nmq_input: ---------------------------------\n");
 		// 处理虚拟网络：检测是否有udp包从p2->p1
 		while (1) {
             hr = vnet->recv(1, buffer, 2000);
@@ -145,11 +154,11 @@ void test(int mode)
 //            fprintf(stderr, "peer: %lu, nmq_input: ret %d\n", (long)kcp1->arg, ret);
 		}
 
-		fprintf(stderr, "peer 2 send: ---------------------------------\n");
+//		fprintf(stderr, "peer 2 send: ---------------------------------\n");
 		// kcp2接收到任何包都返回回去
 		while (1) {
-			hr = nmq_recv(kcp2, buffer, 10);
-            fprintf(stderr, "peer 2. nmq_recv, hr: %d\n", hr);
+			hr = nmq_recv(kcp2, buffer, 2000);
+//            fprintf(stderr, "peer 2. nmq_recv, hr: %d\n", hr);
             // 没有收到包就退出
 			if (hr < 0) {
                 break;
@@ -161,11 +170,11 @@ void test(int mode)
 //            nmq_update(kcp2, iclock());
 		}
 
-		fprintf(stderr, "peer 1 output: ---------------------------------\n");
+//		fprintf(stderr, "peer 1 output: ---------------------------------\n");
 		// kcp1收到kcp2的回射数据
 		while (1) {
-			hr = nmq_recv(kcp1, buffer, 10);
-            fprintf(stderr, "peer 1. nmq_recv, hr: %d\n", hr);
+			hr = nmq_recv(kcp1, buffer, 2000);
+//            fprintf(stderr, "peer 1. nmq_recv, hr: %d\n", hr);
 			// 没有收到包就退出
 			if (hr < 0) break;
 			IUINT32 sn = *(IUINT32*)(buffer + 0);
@@ -233,10 +242,15 @@ int main()
 //        segment *s = ADDRESS_FOR(segment, head, node);
 //        fprintf(stderr, "sn: %d\n", s->sn);
 //    }
+    close(2);
+//    dup(1);
+//    char buf[100000] = {0};
+//    setvbuf(stderr, buf, _IOFBF, 100000);
 
 	test(0);	// 默认模式，类似 TCP：正常模式，无快速重传，常规流控
 //	test(1);	// 普通模式，关闭流控等
 //	test(2);	// 快速模式，所有开关都打开，且关闭流控
+//    fclose(stderr);
 	return 0;
 }
 

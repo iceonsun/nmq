@@ -14,8 +14,8 @@ extern "C" {
 #include "dlist.h"
 
 #define NMQ_BUF_SIZE 1600
-#define NMQ_MAX_BUF_NUM 30
-#define NMQ_MAX_QUE_NUM 1000
+#define NMQ_MAX_BUF_NUM 1500
+#define NMQ_MAX_QUE_NUM 1500
 //#define NMQ_MAX_BUF_QUE_NUM_DEF 3
 
 #define NMQ_STATE_SEND_FAILURE (-1)
@@ -75,6 +75,18 @@ typedef struct segment_s {
     char *data;
 } segment;
 
+
+typedef struct fc_s {
+    float ssth_alpha;
+    float incr;     // float is always 32bit large whether in 32-bit or 64-bit machine
+    IUINT32 cwnd;    // congestion window. maximum is MAX_SND_BUF_NUM. unit: MTU
+    IUINT32 ssthresh;   // unit: MSS + SEG_HEAD_SIZE
+    IUINT32 TROUBLE_TOLERANCE;
+    IINT8 DUP_ACK_LIM;
+    IUINT8 in_trouble;
+    IUINT32 max_lost_sn;
+    IUINT32 MSS;
+} fc_s;
 
 typedef struct flow_control_s {
     float incr;     // float is always 32bit large whether in 32-bit or 64-bit machine
@@ -141,7 +153,8 @@ typedef struct nmq_s {
 //    IUINT32 rtt;    // used to calculate rto
 
     IUINT8 flow_ctrl_on;
-    flow_control_s flow_ctrl;
+//    flow_control_s flow_ctrl;
+    fc_s fc;
 //    IUINT32 ssthresh;   // unit: MSS + SEG_HEAD_SIZE
 //    float incr;     // float is always 32bit large whether in 32-bit or 64-bit machine
 //    IUINT32 cwnd;    // congestion window. maximum is MAX_SND_BUF_NUM. unit: MTU

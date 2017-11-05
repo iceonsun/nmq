@@ -69,11 +69,12 @@ static inline IUINT32 iclock()
 static inline void isleep(unsigned long millisecond)
 {
 	#ifdef __unix 	/* usleep( time * 1000 ); */
-	struct timespec ts;
-	ts.tv_sec = (time_t)(millisecond / 1000);
-	ts.tv_nsec = (long)((millisecond % 1000) * 1000000);
+//	struct timespec ts;
+//	ts.tv_sec = (time_t)(millisecond / 1000);
+//	ts.tv_nsec = (long)((millisecond % 1000) * 1000000);
 	/*nanosleep(&ts, NULL);*/
 	usleep((millisecond << 10) - (millisecond << 4) - (millisecond << 3));
+//	usleep(millisecond * 1000);
 	#elif defined(_WIN32)
 	Sleep(millisecond);
 	#endif
@@ -107,7 +108,6 @@ public:
 	int size() const { return _size; }
 	IUINT32 ts() const { return _ts; }
 	void setts(IUINT32 ts) { _ts = ts; }
-
 protected:
 	unsigned char *_ptr;
 	int _size;
@@ -155,7 +155,7 @@ public:
 	// lostrate: 往返一周丢包率的百分比，默认 10%
 	// rttmin：rtt最小值，默认 60
 	// rttmax：rtt最大值，默认 125
-	LatencySimulator(int lostrate = 10, int rttmin = 100, int rttmax = 10000, int nmax = 1000):
+	LatencySimulator(int lostrate = 10, int rttmin = 60, int rttmax = 125, int nmax = 1000):
 		r12(100), r21(100) {
 		current = iclock();		
 		this->lostrate = lostrate / 2;	// 上面数据是往返丢包率，单程除以2
@@ -181,15 +181,22 @@ public:
 	// 发送数据
 	// peer - 端点1/2，从1发送，从2接收；从2发送从1接收
 	void send(int peer, const void *data, int size) {
+//        DelayTunnel &tunnel = p12;
+//        Random &r = r12;
+//        tx1++;
+        DelayTunnel *tunnel = &p12;
 		if (peer == 1) {
 			tx1++;
 			if (r12.random() < lostrate) return; //todo:
 			if ((int)p12.size() >= nmax) return;
 		}	else {
+            tunnel = &p21;
 			tx2++;
 			if (r21.random() < lostrate) return;  //todo: uncoment for lost rate test
 			if ((int)p21.size() >= nmax) return;
 		}
+
+
 		DelayPacket *pkt = new DelayPacket(size, data);
 		current = iclock();
 		IUINT32 delay = rttmin;
@@ -208,35 +215,65 @@ public:
 //			}
 			p21.push_back(pkt);
 		}
-	}
+
+//        fprintf(stderr, "send, tunnel: %p, size: %d, pkt: %p, _ptr: %p\n", tunnel, tunnel->size(),  pkt, pkt->ptr());
+
+    }
 
 	// 接收数据
 	int recv(int peer, void *data, int maxsize) {
-		DelayTunnel::iterator it;
-		if (peer == 1) {
-			it = p21.begin();
-			if (p21.size() == 0) return -1;
-		}	else {
-			it = p12.begin();
-			if (p12.size() == 0) return -1;
-		}
-		DelayPacket *pkt = *it;
-		current = iclock();
-		if (current < pkt->ts()) {
-			fprintf(stderr, "%u ms left to timeout. just return\n", pkt->ts() - current);
-			return -2;	// todo
-		}
+        DelayTunnel *tunnel = &p21;
+        const char *peerstr = peer == 1? "2->1":"1->2";
+        if (peer == 2) {
+            tunnel = &p12;
+        }
+        if (tunnel->empty()) {
+//            fprintf(stderr, "%s tunnenl empty\n", peerstr);
+            return -1;
+        }
+
+        current = iclock();
+        auto it = tunnel->begin();
+        fprintf(stderr, "%s, size: %d, time left: ", peerstr, tunnel->size());
+        for (; (it != tunnel->end()); it++) {
+//        for (; (it != tunnel.end()); it++) {
+            fprintf(stderr, " %d ", current - (*it)->ts() );
+            if ((*it)->ts() >= current) {
+                break;
+            }
+        }
+        fprintf(stderr, "\n");
+
+        if (it == tunnel->end()) {
+            return -2;
+        }
+
+        DelayPacket *pkt = *it;
+//		if (peer == 1) {
+//            if (p21.size() == 0) return -1;
+//            it = p21.begin();
+//		}	else {
+//            if (p12.size() == 0) return -1;
+//            it = p12.begin();
+//		}
+//		DelayPacket *pkt = *it;
+//		current = iclock();
+//		if (current < pkt->ts()) {
+//			fprintf(stderr, "%u ms left to timeout. just return\n", pkt->ts() - current);
+//			return -2;	// todo
+//		}
 		if (maxsize < pkt->size()) return -3;
-		if (peer == 1) {
-//			fprintf(stderr, "2->1\n");
-			p21.erase(it);
-		}	else {
-//			fprintf(stderr, "1->2\n");
-			p12.erase(it);
-		}
+//        fprintf(stderr, "recv, tunnel: %p, size: %d, pkt: %p,  _ptr: %p\n", tunnel, tunnel->size(), pkt, pkt->ptr());
+        tunnel->erase(it);
+//		if (peer == 1) {
+////			fprintf(stderr, "2->1\n");
+//			p21.erase(it);
+//		}	else {
+////			fprintf(stderr, "1->2\n");
+//			p12.erase(it);
+//		}
 		maxsize = pkt->size();
 		memcpy(data, pkt->ptr(), maxsize);
-//        fprintf(stderr, "deleing pkt: %p\n", pkt);
 		delete pkt;
 		return maxsize;
 	}

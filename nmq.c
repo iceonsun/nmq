@@ -51,6 +51,12 @@ static void flow_control_recv_acks(flow_control_s *f, const IUINT32 new_snd_una,
 static void flow_control_fast_recovery_new_ack(IUINT32 snd_una, flow_control_s *f);
 static void flow_control_normal_ack(flow_control_s *f, const IUINT32 nacks);
 
+// fc
+void fc_init(NMQ *q, fc_s *fc);
+void fc_pkt_loss(fc_s *fc, IUINT32 max_lost_sn, IUINT32 n_loss, IUINT32 n_timeout);
+void fc_input_acks(fc_s *fc, const IUINT32 una, IUINT32 nacks);
+void fc_normal_acks(fc_s *fc, IUINT32 nacks);
+
 // rtt & rto
 static inline void update_rtt(NMQ *q, IUINT32 sn, IUINT32 sendts);
 static void rtt_estimator(NMQ *q, rto_helper_s *rter, IUINT32 rtt);
@@ -91,7 +97,7 @@ static nmq_free_fn gs_free_fn = free;
 
 
 static void nmq_flush_snd_buf(NMQ *q) {
-    IINT32 rcv_wnd_unused = avaible_rcv_wnd(q);
+    IINT32 rcv_wnd = avaible_rcv_wnd(q);
     IINT32 resent = dup_ack_limit(q);
 
     IUINT32 n_loss = 0;
@@ -105,6 +111,8 @@ static void nmq_flush_snd_buf(NMQ *q) {
     // 1 mss can hold many complete segments
     dlnode *node = NULL, *nxt = NULL;
 //    while (list_not_empty(&q->snd_buf)) { // caution!! this may cause error!
+//    fprintf(stderr, "peer: %ld, snd_cwnd: %u, cwnd: %u, rmt_wnd: %u, rcv_wnd: %u, snd_nxt: %d, snd_una: %d nsnd_que: %d,  sending ",
+//            (long)q->arg, get_snd_cwnd(q), q->fc.cwnd, q->rmt_wnd, rcv_wnd, q->snd_nxt, q->snd_una, q->nsnd_que);
     FOR_EACH(node, nxt, &q->snd_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
         IUINT8 need_send = 0;
@@ -120,14 +128,16 @@ static void nmq_flush_snd_buf(NMQ *q) {
             need_send = 1;  // will send if receive repeat acks. (fast retransmission). tcp/ip illustrated vol1. ch21.7
             seg_reach_fastack(q, s);
             n_loss++; // increment number of segments lost
-            max_lost_sn = s->sn;    // snd_buf is order of sn
             s->dupacks = 0;
         }
 
         if (need_send) {
-            fprintf(stderr, "peer: %ld, sending seg: %p, wnd_unsed: %u, cwnd: %u, sn: %u, len: %u, nsnd_nxt: %d, snd_una: %d nsnd_que: %d, rto: %u, sendts: %u, resendts:%u, curr: %u, n_timeout: %d, n_loss: %d\n", (long)q->arg,  s, rcv_wnd_unused, q->flow_ctrl.cwnd, s->sn, s->len, q->snd_nxt, q->snd_una, q->nsnd_que, s->rto, s->sendts, s->resendts, current, n_timeout, n_loss);
+//            fprintf(stderr, "sn: %u, ", s->sn);
+            fprintf(stderr, "peer: %ld, sending seg: %p, rcv_wnd: %u, cwnd: %u, sn: %u, len: %u, nsnd_nxt: %d, snd_una: %d nsnd_que: %d, rto: %u, sendts: %u, resendts:%u, curr: %u, n_timeout: %d, n_loss: %d\n", (long)q->arg,  s, rcv_wnd, q->fc.cwnd, s->sn, s->len, q->snd_nxt, q->snd_una, q->nsnd_que, s->rto, s->sendts, s->resendts, current, n_timeout, n_loss);
+//            fprintf(stderr, "peer: %ld, sending seg: %p, wnd_unsed: %u, cwnd: %u, sn: %u, len: %u, nsnd_nxt: %d, snd_una: %d nsnd_que: %d, rto: %u, sendts: %u, resendts:%u, curr: %u, n_timeout: %d, n_loss: %d\n", (long)q->arg,  s, rcv_wnd_unused, q->flow_ctrl.cwnd, s->sn, s->len, q->snd_nxt, q->snd_una, q->nsnd_que, s->rto, s->sendts, s->resendts, current, n_timeout, n_loss);
+            max_lost_sn = s->sn;    // snd_buf is order of sn
             s->n_sent++;
-            s->wnd = rcv_wnd_unused;
+            s->wnd = rcv_wnd;
             s->una = q->rcv_nxt;    //  figure out diff among snd_una, una, rcv_nxt
             s->sendts = current;
             // note: s->cmd, s->conv, s->sn and s->frag must not be updated here. they are assigned values in #sndq2buf
@@ -146,20 +156,27 @@ static void nmq_flush_snd_buf(NMQ *q) {
 
         }
     }
+//    fprintf(stderr, "\n");
 
     // flush remaining data
     if (p > buf) {
         nmq_output(q, buf, p - buf);
     }
 
-    if (n_loss) {
-        flow_control_dup_acks(&q->flow_ctrl, n_loss, max_lost_sn);
+    if (n_loss + n_timeout > 0) {
+        fc_pkt_loss(&q->fc, max_lost_sn, n_loss, n_timeout);
     }
-    if (n_timeout) {
-        fprintf(stderr, "peer: %ld, ", (long)q->arg);
-        flow_control_timeout(&q->flow_ctrl, n_timeout);
-    }
+
+
+//    if (n_loss) {
+//        flow_control_dup_acks(&q->flow_ctrl, n_loss, max_lost_sn);
+//    }
+//    if (n_timeout) {
+//        fprintf(stderr, "peer: %ld, ", (long)q->arg);
+//        flow_control_timeout(&q->flow_ctrl, n_timeout);
+//    }
 }
+
 
 static void nmq_flush(NMQ *q) {
     IUINT32 current = q->current;
@@ -458,7 +475,8 @@ static IINT32 sndq2buf(NMQ *q) {
         dlist_add_tail(&q->snd_buf, node);
         q->snd_sn_to_node[modsn(s->sn, q->MAX_SND_BUF_NUM)] = node;
         q->nsnd_que--;
-        fprintf(stderr, "peer: %lu, sndq2buf, sn: %u, snd_una: %u, snd_nxt: %u, rcv_nxt: %u, nrcv_buf: %u, nsnd_que: %u, cwnd: %u, snd_wnd: %u\n", (long)q->arg, s->sn, q->snd_una, q->snd_nxt, q->rcv_nxt, q->nrcv_buf, q->nsnd_que, q->flow_ctrl.cwnd, get_snd_cwnd(q));
+        fprintf(stderr, "peer: %lu, sndq2buf, sn: %u, snd_una: %u, snd_nxt: %u, rcv_nxt: %u, nrcv_buf: %u, nsnd_que: %u, cwnd: %u, snd_wnd: %u\n", (long)q->arg, s->sn, q->snd_una, q->snd_nxt, q->rcv_nxt, q->nrcv_buf, q->nsnd_que, q->fc.cwnd, get_snd_cwnd(q));
+//        fprintf(stderr, "peer: %lu, sndq2buf, sn: %u, snd_una: %u, snd_nxt: %u, rcv_nxt: %u, nrcv_buf: %u, nsnd_que: %u, cwnd: %u, snd_wnd: %u\n", (long)q->arg, s->sn, q->snd_una, q->snd_nxt, q->rcv_nxt, q->nrcv_buf, q->nsnd_que, q->flow_ctrl.cwnd, get_snd_cwnd(q));
 //        q->nsnd_buf++;
         tot++;
     }
@@ -598,7 +616,8 @@ static void input_acks(NMQ *q, const char *buf, const IUINT32 old_una) {
             long)q->arg, (q->snd_nxt - q->snd_una), old_una, q->snd_una);
 
     update_rto(q);
-    flow_control_recv_acks(&q->flow_ctrl, q->snd_una, old_una, nacks);
+//    flow_control_recv_acks(&q->flow_ctrl, q->snd_una, old_una, nacks);
+    fc_input_acks(&q->fc, q->snd_una, nacks);
 }
 
 static void set_ack_ts(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
@@ -617,13 +636,13 @@ static void set_ack_ts(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
     char *p1 = (char *) (q->acklist + q->ackcount * 2);
     char *p2 = (char *) (q->acklist + q->ackcount * 2 + 1);
 
-    if (is_little_endian()) {
+//    if (is_little_endian()) {
         encode_uint32(sn, p1);
         encode_uint32(ts_send, p2);
-    } else {
-        big_endian_to_little(sn, p1);
-        big_endian_to_little(ts_send, p2);
-    }
+//    } else {
+//        big_endian_to_little(sn, p1);
+//        big_endian_to_little(ts_send, p2);
+//    }
 
     q->ackcount++;
 }
@@ -788,6 +807,69 @@ static void flow_control_timeout(flow_control_s *f, IUINT32 n_timeout) {
 }
 // } flow control
 
+// fc {
+void fc_init(NMQ *q, fc_s *fc) {
+    memset(fc, 0, sizeof(fc_s));
+    fc->TROUBLE_TOLERANCE = 2;  // todo
+    fc->DUP_ACK_LIM = NMQ_DUP_ACK_LIM_DEF;  // todo
+    fc->MSS = q->NMQ_MSS;
+    fc->ssth_alpha = 0.5;   // todo
+    fc->cwnd = 10;
+    fc->incr = fc->cwnd * fc->MSS;
+    fc->ssthresh = NMQ_SSTHRESH_DEF;
+    fc->in_trouble = 0;
+    fc->max_lost_sn = 0;
+}
+void fc_pkt_loss(fc_s *fc, IUINT32 max_lost_sn, IUINT32 n_loss, IUINT32 n_timeout) {
+    if (!fc->in_trouble && (n_loss + n_timeout) >= fc->TROUBLE_TOLERANCE) {
+        fprintf(stderr, "%s, before, n_loss: %u, n_timeout: %u, max_lost_sn: %u, ssthresh: %u, cwnd: %u\n", __FUNCTION__, n_loss, n_timeout, max_lost_sn, fc->ssthresh, fc->cwnd);
+        fc->in_trouble = 1;
+        fc->max_lost_sn = max_lost_sn;
+        fc->ssthresh = MAX(NMQ_SSTHRESH_MIN, fc->cwnd * fc->ssth_alpha);   // todo, change 0.5 for test
+        fc->cwnd = fc->ssthresh;
+        if (n_loss) {
+            fc->cwnd += fc->DUP_ACK_LIM;
+        }
+        fc->incr = fc->cwnd * fc->MSS;
+        fprintf(stderr, "%s, after, n_loss: %u, n_timeout: %u, max_lost_sn: %u, ssthresh: %u, cwnd: %u\n", __FUNCTION__, n_loss, n_timeout, max_lost_sn, fc->ssthresh, fc->cwnd);
+
+    }
+}
+
+void fc_input_acks(fc_s *fc, const IUINT32 una, IUINT32 nacks) {
+    fprintf(stderr, "%s, before, f->cwnd: %u, nacks: %u, ssthreash: %u, una: %u, max_lost_sn: %u\n", __FUNCTION__, fc->cwnd, nacks, fc->ssthresh, una, fc->max_lost_sn);
+
+    if (fc->in_trouble) {
+        if (una > fc->max_lost_sn) {    // new data arrives
+            fc->cwnd = fc->ssthresh + 1;
+            fc->in_trouble = 0;
+            fc->max_lost_sn = 0;
+        } else {
+            fc->cwnd += nacks;
+        }
+        fc->incr = fc->cwnd * fc->MSS;
+    } else {
+        fc_normal_acks(fc, nacks);
+    }
+
+    fprintf(stderr, "%s, after, f->cwnd: %u, nacks: %u, ssthreash: %u, una: %u, max_lost_sn: %u\n", __FUNCTION__, fc->cwnd, nacks, fc->ssthresh, una, fc->max_lost_sn);
+}
+
+void fc_normal_acks(fc_s *fc, IUINT32 nacks) {
+    fprintf(stderr, "%s, before, f->cwnd: %u, nacks: %u, ssthreash: %u, nacks: %u\n", __FUNCTION__, fc->cwnd, nacks, fc->ssthresh, nacks);
+    if (fc->cwnd <= fc->ssthresh) {  // slow start
+        fc->cwnd = MIN(fc->cwnd + nacks, fc->ssthresh + 1);
+        fc->incr = fc->cwnd * fc->MSS;
+    } else {    // congestion avoidance
+        fc->incr += fc->MSS * fc->MSS / fc->incr + (fc->MSS >> 3);
+        if ((fc->cwnd + 1) * fc->MSS <= fc->incr) {
+            fc->cwnd += 1;
+        }
+    }
+    fprintf(stderr, "%s, before, f->cwnd: %u, nacks: %u, ssthreash: %u\n", __FUNCTION__, fc->cwnd, nacks, fc->ssthresh);
+}
+// } fc
+
 // rtt & rto {
 static inline void update_rtt(NMQ *q, IUINT32 sn, IUINT32 sendts) {
 //    segment *s = ADDRESS_FOR(segment, head, q->snd_sn_to_node[sn]); bug!!
@@ -854,7 +936,8 @@ static inline IUINT32 get_snd_cwnd(NMQ *q) {
 //    IUINT32 cwnd = MIN(q->MAX_SND_BUF_NUM - (q->snd_nxt - q->snd_una), q->rmt_wnd); bug!!
     IUINT32 cwnd = MIN(q->MAX_SND_BUF_NUM, q->rmt_wnd); // attention to how get_snd_cwnd is used
     if (q->flow_ctrl_on) {
-        return MIN(cwnd, q->flow_ctrl.cwnd);
+//        return MIN(cwnd, q->flow_ctrl.cwnd);
+        return MIN(cwnd, q->fc.cwnd);
     }
     return cwnd;
 }
@@ -872,7 +955,8 @@ static inline void update_rmt_wnd(NMQ *q, IUINT32 rmt_wnd) {
 // nmq utils {
 static inline IINT8 dup_ack_limit(NMQ *q) {
     if (q->flow_ctrl_on) {
-        return q->flow_ctrl.DUP_ACK_LIM;
+//        return q->flow_ctrl.DUP_ACK_LIM;
+        return q->fc.DUP_ACK_LIM;
     }
     return NMQ_DUP_ACK_LIM_DEF;   // standard
 }
@@ -967,9 +1051,6 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
     q->acklist = (IUINT32*)nmq_malloc(q->ackmaxnum * sizeof(IUINT32) * 2);
     q->ackcount = 0;
 
-//    q->flow_ctrl_on = 1;
-//    init_flow_control(q, &q->flow_ctrl);
-
     q->rto = NMQ_RTO_DEF;
     q->nodelay = 0; // todo:
     q->ts_probe_wait = NMQ_PROBE_WAIT_DEF;
@@ -981,8 +1062,9 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
     q->state = 0;
 
     q->flow_ctrl_on = 1;    // todo: verify cwnd later. it's not working right now
-    init_flow_control(q, &q->flow_ctrl);
-    q->flow_ctrl.MSS = q->NMQ_MSS;
+    fc_init(q, &q->fc);
+//    init_flow_control(q, &q->flow_ctrl);
+//    q->flow_ctrl.MSS = q->NMQ_MSS;
 
     return q;
 }
