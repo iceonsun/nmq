@@ -15,7 +15,7 @@
 #include "dlist.h"
 #include "nmq.h"
 
-#define MAX_SN 1000
+#define MAX_SN 5000
 // 模拟网络
 LatencySimulator *vnet;
 
@@ -33,7 +33,7 @@ int udp_output(const char *buf, const int len, NMQ *kcp, void *user)
 void test(int mode)
 {
 	// 创建模拟网络：丢包率10%，Rtt 60ms~125ms
-	vnet = new LatencySimulator(10, 60, 125);
+	vnet = new LatencySimulator(50, 60, 125);
 
 	// 创建两个端点的 kcp对象，第一个参数 conv是会话编号，同一个会话需要相同
 	// 最后一个是 user参数，用来传递标识
@@ -42,9 +42,21 @@ void test(int mode)
     NMQ *kcp1 = nmq_new(0x11223344, (void*)1);
     NMQ *kcp2 = nmq_new(0x11223344, (void*)2);
 
+//	nmq_set_dup_acks_limit(kcp1, 2);
+//	nmq_set_dup_acks_limit(kcp2, 2);
+
+//	nmq_set_trouble_tolerance(kcp1, 8);
+// 	nmq_set_trouble_tolerance(kcp2, 8);
+
 	// 设置kcp的下层输出，这里为 udp_output，模拟udp网络输出函数
-	nmq_set_output_func(kcp1, udp_output);
-    nmq_set_output_func(kcp2, udp_output);
+    nmq_set_output_cb(kcp1, udp_output);
+    nmq_set_output_cb(kcp2, udp_output);
+	nmq_set_interval(kcp1, 50);
+	nmq_set_interval(kcp2, 50);
+	nmq_set_dup_acks_limit(kcp1, 2);
+	nmq_set_dup_acks_limit(kcp2, 2);
+    nmq_start(kcp1);
+    nmq_start(kcp2);
 //	kcp1->output = udp_output;
 //	kcp2->output = udp_output;
 
@@ -59,7 +71,7 @@ void test(int mode)
 
 	// 配置窗口大小：平均延迟200ms，每20ms发送一个包，
 	// 而考虑到丢包重发，设置最大收发窗口为128
-//	ikcp_wndsize(kcp1, 128, 128);
+//	ikcp_wndsizefn_output(kcp1, 128, 128);
 //	ikcp_wndsize(kcp2, 128, 128);
 
 	// 判断测试用例的模式
@@ -122,11 +134,13 @@ void test(int mode)
 //		}
 
         for (; current >= slap; slap += 20) {
-            ((IUINT32*)buffer)[0] = index++;
+            ((IUINT32*)buffer)[0] = index;
             ((IUINT32*)buffer)[1] = current;
 
             // 发送上层协议包
-            nmq_send(kcp1, buffer, 8);
+			if (nmq_send(kcp1, buffer, 8) > 0) {
+				index++;
+			}
         }
 
 //		fprintf(stderr, "peer 1 -> 2 nmq_input: ---------------------------------\n");
@@ -160,7 +174,7 @@ void test(int mode)
 			hr = nmq_recv(kcp2, buffer, 2000);
 //            fprintf(stderr, "peer 2. nmq_recv, hr: %d\n", hr);
             // 没有收到包就退出
-			if (hr < 0) {
+			if (hr <= 0) {
                 break;
             }
 //            fprintf(stderr, "peer 2. nmq_send\n");
@@ -176,7 +190,7 @@ void test(int mode)
 			hr = nmq_recv(kcp1, buffer, 2000);
 //            fprintf(stderr, "peer 1. nmq_recv, hr: %d\n", hr);
 			// 没有收到包就退出
-			if (hr < 0) break;
+			if (hr <= 0) break;
 			IUINT32 sn = *(IUINT32*)(buffer + 0);
 			IUINT32 ts = *(IUINT32*)(buffer + 4);
 			IUINT32 rtt = current - ts;
@@ -195,6 +209,7 @@ void test(int mode)
 			if (rtt > (IUINT32)maxrtt) maxrtt = rtt;
 
 			fprintf(stderr, "[RECV] mode=%d sn=%d rtt=%d\n", mode, (int)sn, (int)rtt);
+//			printf("[RECV] mode=%d sn=%d rtt=%d\n", mode, (int)sn, (int)rtt);
 		}
 		if (next >= MAX_SN) break;
 	}
@@ -242,7 +257,7 @@ int main()
 //        segment *s = ADDRESS_FOR(segment, head, node);
 //        fprintf(stderr, "sn: %d\n", s->sn);
 //    }
-    close(2);
+//    close(2);
 //    dup(1);
 //    char buf[100000] = {0};
 //    setvbuf(stderr, buf, _IOFBF, 100000);

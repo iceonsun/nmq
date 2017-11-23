@@ -10,3 +10,4 @@ cmake-build-debug/
 *.out
 *.dSYM
 *.o
+a.out*
