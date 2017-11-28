@@ -57,9 +57,9 @@ extern "C" {
 #define NMQ_ERR_MSG_BROKEN (-11)
 #define ERR_DATA_TOO_LONG (-12)
 #define NMQ_ERR_RCV_BUF_NO_MEM (-13)
+#define NMQ_ERR_SEND_ON_SHUTDOWNED (-15)
 #define NMQ_ERR_SND_QUE_NO_MEM (-14)
 #define NMQ_ERR_ACK_BUF_LEN (-20)
-
 // 1500 minus ip, udp  and kcp header size.
 #define NMQ_MSS_DEF 1458
 #define NMQ_HEAD_SIZE 24
@@ -176,10 +176,15 @@ typedef struct nmq_s {
     IINT32 (*output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
     void (*failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
 //    void (*recv_cb)(struct nmq_s *q, const char *buf, const int nlen);
+
+    char fin_sn;
+    void (*send_done_cb)(struct nmq_s *nmq);
 } NMQ;
 
 typedef IINT32 (*nmq_output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
 typedef void (*nmq_failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
+typedef void (*nmq_send_done_cb)(struct nmq_s *nmq);
+
 //typedef void (*nmq_recv_cb)(NMQ *q, const char *buf, const int nlen);
 
 void nmq_update(NMQ *q, IUINT32 current);
@@ -200,6 +205,7 @@ IUINT32 nmq_get_conv(const char *buf);
 void nmq_set_output_cb(NMQ *q, nmq_output_cb cb);
 void set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd);
 //void nmq_set_recv_cb(NMQ *q, nmq_recv_cb cb);
+void nmq_shutdown_send(NMQ *q, nmq_send_done_cb cb);
 
 segment *nmq_new_segment(IUINT32 data_size);
 void nmq_delete_segment(segment *seg);

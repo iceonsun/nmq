@@ -21,6 +21,7 @@ const IUINT8 CMD_DATA = 1;
 const IUINT8 CMD_ACK = 2;
 const IUINT8 CMD_WND_REQ = 3;    // ask peer wnd
 const IUINT8 CMD_WND_ANS = 4;   // tell my wnd to peer. split req and ans to avoid repeatedly sending cmd_wnd_X
+//const IUINT8 CMD_FIN = 5;
 
 static IINT32 sndq2buf(NMQ *q);
 
@@ -102,6 +103,10 @@ static inline void *nmq_malloc(size_t size);
 static inline void *nmq_free(void *addr);
 
 static inline void allocate_mem(NMQ *q);
+
+static inline void check_send_done(NMQ *q);
+
+static inline int is_shutdowned(NMQ *q);
 
 // enc
 // encode certain segment fields to buf. return new address that can encode
@@ -203,6 +208,8 @@ static void flush(NMQ *q) {
     rcvbuf2q(q);
 
     window_probe_build_req_if_need(q);
+
+    check_send_done(q);
 }
 
 static void send_failed(NMQ *q, IUINT32 sn) {
@@ -250,7 +257,8 @@ static IINT8 input_segment(NMQ *q, segment *s) {
 
     fprintf(stderr,
             "peer: %ld, input seg: %p, wnd: %u, cwnd: %u, sn: %u, len: %u, nsnd_nxt: %d, snd_una: %d nsnd_que: %d, current: %u\n",
-            (long) q->arg, s, s->wnd, q->fc.cwnd, s->sn, s->len, q->snd_nxt, q->snd_una, q->nsnd_que, (q->current) % 10000);
+            (long) q->arg, s, s->wnd, q->fc.cwnd, s->sn, s->len, q->snd_nxt, q->snd_una, q->nsnd_que,
+            (q->current) % 10000);
 
     set_ack_ts(q, s->sn, q->current);
 
@@ -313,7 +321,7 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
         p = decode_uint8(&cmd, p);
 
         if (CMD_DATA != cmd && CMD_ACK != cmd && CMD_WND_REQ != cmd
-            && CMD_WND_ANS != cmd) {// drop this pkt if could not understand cmd
+            && CMD_WND_ANS != cmd /*&& CMD_FIN != cmd*/) {// drop this pkt if could not understand cmd
             fprintf(stderr, "wrong cmd: %d\n", cmd);
             return NMQ_ERR_WRONG_CMD;
         }
@@ -369,8 +377,10 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
         } else if (CMD_WND_ANS == cmd) {
             fprintf(stderr, "cmd_wnd_ans, wnd: %u, una: %u, rmt_wnd: %u, snd_nxt: %u, nsnd_buf: %u, nsnd_que: %u\n",
                     wnd, una, q->rmt_wnd, q->snd_nxt, (q->snd_nxt - q->snd_una), q->nsnd_que);
+//        } else if (CMD_FIN == cmd) {
         } else {
             fprintf(stderr, "unreachable branch!\n");
+            assert(0);
         }
     }
 
@@ -378,6 +388,7 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 //    if (rcvbuf2q(q)) {
 //        flush_rcv_q(q);
 //    }
+
     return tot;
 }
 
@@ -441,6 +452,11 @@ IINT32 nmq_output(NMQ *q, const char *data, const int len) {
 }
 
 IINT32 nmq_send(NMQ *q, const char *data, const int len) {
+    if (is_shutdowned(q)) {
+        fprintf(stderr, "send already shutdown.\n");
+        return NMQ_ERR_SEND_ON_SHUTDOWNED;
+    }
+
     if (!data || len <= 0) {
         return 0;
     }
@@ -982,6 +998,12 @@ void set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd) {
 //} nmq utils
 
 
+
+void nmq_shutdown_send(NMQ *q, nmq_send_done_cb cb) {
+    q->send_done_cb = cb;
+    q->fin_sn = 1;
+}
+
 // memory ops. {
 NMQ *nmq_new(IUINT32 conv, void *arg) {
     NMQ *q = (NMQ *) nmq_malloc(sizeof(NMQ));
@@ -1035,6 +1057,9 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
     q->failure_cb = NULL;
 //    q->recv_cb = NULL;
 
+    q->fin_sn = 0;
+    q->send_done_cb = NULL;
+
     return q;
 }
 
@@ -1047,6 +1072,20 @@ static inline void allocate_mem(NMQ *q) {
 
     q->acklist = (IUINT32 *) nmq_malloc(q->ackmaxnum * sizeof(IUINT32) * 2);
     memset(q->acklist, 0, q->ackmaxnum * sizeof(IUINT32) * 2);
+}
+
+
+void check_send_done(NMQ *q) {
+    if (is_shutdowned(q) && !list_not_empty(&q->snd_que) && (!list_not_empty(&q->snd_buf))) {
+        fprintf(stderr, "send completed\n");
+        if (q->send_done_cb) {
+            q->send_done_cb(q);
+        }
+    }
+}
+
+int is_shutdowned(NMQ *q) {
+    return q->fin_sn != 0;
 }
 
 void nmq_destroy(NMQ *q) {
