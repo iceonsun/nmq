@@ -249,8 +249,8 @@ static IINT8 input_segment(NMQ *q, segment *s) {
     }
 
     fprintf(stderr,
-            "peer: %ld, input seg: %p, wnd: %u, cwnd: %u, sn: %u, len: %u, nsnd_nxt: %d, snd_una: %d nsnd_que: %d\n",
-            (long) q->arg, s, s->wnd, q->fc.cwnd, s->sn, s->len, q->snd_nxt, q->snd_una, q->nsnd_que);
+            "peer: %ld, input seg: %p, wnd: %u, cwnd: %u, sn: %u, len: %u, nsnd_nxt: %d, snd_una: %d nsnd_que: %d, current: %u\n",
+            (long) q->arg, s, s->wnd, q->fc.cwnd, s->sn, s->len, q->snd_nxt, q->snd_una, q->nsnd_que, (q->current) % 10000);
 
     set_ack_ts(q, s->sn, q->current);
 
@@ -264,7 +264,7 @@ static IINT8 input_segment(NMQ *q, segment *s) {
 void nmq_update(NMQ *q, IUINT32 current) {
     assert(q->inited == 1);
 
-    IUINT32 df = current - q->current;  // df cannot < 0
+    IINT32 df = current - q->current;  // df cannot < 0
     if (df > 10000 || df < 0) {
         df = q->flush_interval;
     }
@@ -272,6 +272,12 @@ void nmq_update(NMQ *q, IUINT32 current) {
         q->current = current;
         flush(q);
     }
+}
+
+// ignore it
+void nmq_flush(NMQ *q, IUINT32 current) {
+    q->current = current;
+    flush(q);
 }
 
 void nmq_start(NMQ *q) {
@@ -393,14 +399,17 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
     // https://stackoverflow.com/questions/2862071/how-large-should-my-recv-buffer-be-when-calling-recv-in-the-socket-library
     IINT32 rcvq_size = next_packet_size(&q->rcv_que);
     if (rcvq_size > buf_size) { // simply drop packet if no enough buf
-        return -(rcvq_size << 16);
+        fprintf(stderr, "buf too small. size: %d. require: %d\n", buf_size, rcvq_size);
+        return NMQ_ERR_MSG_SIZE;
     }
 
     char *p = buf;
     dlnode *node, *nxt;
+    fprintf(stderr, "%s, frag: ", __FUNCTION__);
     FOR_EACH(node, nxt, &q->rcv_que) {
         segment *s = ADDRESS_FOR(segment, head, node);
         memcpy(p, s->data, s->len);
+        fprintf(stderr, "sn: %d, frag: %d, ", s->sn, s->frag);
         p += s->len;
         const IINT8 frag = s->frag;
 
@@ -412,6 +421,7 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
             break;
         }
     }
+    fprintf(stderr, "\nnext_packet_size: %d, buf_size: %d, p - buf: %d\n", rcvq_size, buf_size, (p - buf));
 
     if (p - buf != rcvq_size) {
         return NMQ_ERR_RCV_QUE_INCONSISTANCE;
@@ -466,6 +476,7 @@ IINT32 nmq_send(NMQ *q, const char *data, const int len) {
         dlist_add_tail(&q->snd_que,
                        &s->head); // attention: add s->head to tail, not s. when can retrieve s from s->head
     }
+    fprintf(stderr, "%s, len: %d, frag: %d\n", __FUNCTION__, len, tot);
 
     q->nsnd_que += tot;
 
@@ -473,7 +484,6 @@ IINT32 nmq_send(NMQ *q, const char *data, const int len) {
 }
 
 // < 0 for error.
-// if buf is too small and retval >> 16 is size that buf should be.
 IINT32 nmq_recv(NMQ *q, char *buf, const int buf_size) {
     if (!q->inited) {
         return NMQ_ERR_UNITIALIZED;
@@ -555,8 +565,8 @@ static void acks2peer(NMQ *q) {
     const int UNIT = 2 * sizeof(IUINT32);
     const IUINT32 max_nack = q->NMQ_MSS / UNIT;
     const IUINT32 tot = UNIT * max_nack;
-    fprintf(stderr, "peer: %lu, acks2peer, ackcount: %d\n", (
-            long) q->arg, q->ackcount);
+    fprintf(stderr, "peer: %lu, acks2peer, ackcount: %d, current: %u\n", (
+            long) q->arg, q->ackcount, (q->current) % 10000);
     for (int i = 0; i < q->ackcount; i++) {
         IUINT32 sn;
         decode_uint32(&sn, (const char *) (i * 2 + q->acklist));
@@ -637,6 +647,7 @@ static void input_acks(NMQ *q, const char *p, IUINT32 len, const IUINT32 old_una
     IUINT32 maxack = 0;
     IUINT32 nacks = len / (2 * sizeof(IUINT32));
 
+    fprintf(stderr, "%s, ", __FUNCTION__);
     while (len >= 2) {
         len -= (2 * sizeof(IUINT32));
         IUINT32 ack_sn, ack_ts_send;
@@ -644,7 +655,9 @@ static void input_acks(NMQ *q, const char *p, IUINT32 len, const IUINT32 old_una
         p = decode_uint32(&ack_ts_send, p);
         maxack = (IUINT32) MAX(maxack, ack_sn);
         process_ack(q, ack_sn, ack_ts_send);    // will delete segments
+        fprintf(stderr, "sn: %u, ", ack_sn);
     }
+    fprintf(stderr, "\n");
     // todo: multiple segments send(or receive?) at same time will not regard as dup acks.
     // todo: cause this cause retransmit very soon.
 
@@ -978,6 +991,7 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
     q->arg = arg;
     q->inited = 0;
     q->flush_interval = NMQ_FLUSH_INTERVAL_DEF;
+    q->type = NMQ_TYPE_DGRAM;
 
     q->MAX_SND_BUF_NUM = NMQ_BUF_NUM_DEF;   // must be initialized before rcv_sn_to_node
     q->MAX_RCV_BUF_NUM = NMQ_BUF_NUM_DEF;
@@ -1039,6 +1053,7 @@ void nmq_destroy(NMQ *q) {
     nmq_free(q->snd_sn_to_node);
     nmq_free(q->rcv_sn_to_node);;
     nmq_free(q->acklist);
+    fprintf(stderr, "%s, snd_una: %u, rcv_nxt: %u, snd_nxt: %u\n", __FUNCTION__, q->snd_una, q->rcv_nxt, q->snd_nxt);
     dlist *lists[] = {&q->snd_buf, &q->snd_que, &q->rcv_buf, &q->rcv_que, NULL};
     for (int i = 0; lists[i]; i++) {
         dlnode *node, *nxt;

@@ -65,6 +65,9 @@ extern "C" {
 #define NMQ_HEAD_SIZE 24
 #define SEG_HEAD_SIZE NMQ_HEAD_SIZE
 
+#define NMQ_TYPE_DGRAM 0
+#define NMQ_TYPE_STREAM 1
+
 #define OFFSETOF(TYPE, MEMBER) \
     ((size_t)&(((TYPE *)0)->MEMBER))
 
@@ -122,6 +125,7 @@ typedef struct nmq_s {
     IUINT32 current;
     IINT8 inited;
     IUINT16 flush_interval;
+    IUINT8 type;
 
     IUINT32 rmt_wnd;
 
@@ -179,6 +183,8 @@ typedef void (*nmq_failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
 //typedef void (*nmq_recv_cb)(NMQ *q, const char *buf, const int nlen);
 
 void nmq_update(NMQ *q, IUINT32 current);
+// we regard
+void nmq_flush(NMQ *q, IUINT32 current);
 // upper <-> nmq
 IINT32 nmq_send(NMQ *q, const char *data, const int len);
 
