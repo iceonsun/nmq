@@ -21,7 +21,7 @@ const IUINT8 CMD_DATA = 1;
 const IUINT8 CMD_ACK = 2;
 const IUINT8 CMD_WND_REQ = 3;    // ask peer wnd
 const IUINT8 CMD_WND_ANS = 4;   // tell my wnd to peer. split req and ans to avoid repeatedly sending cmd_wnd_X
-//const IUINT8 CMD_FIN = 5;
+const IUINT8 CMD_FIN = 5;
 
 static IINT32 sndq2buf(NMQ *q);
 
@@ -104,6 +104,7 @@ static inline void *nmq_free(void *addr);
 
 static inline void allocate_mem(NMQ *q);
 
+static inline void check_recv_done(NMQ *q);
 static inline void check_send_done(NMQ *q);
 
 static inline int is_shutdowned(NMQ *q);
@@ -210,6 +211,8 @@ static void flush(NMQ *q) {
     window_probe_build_req_if_need(q);
 
     check_send_done(q);
+
+    check_recv_done(q);
 }
 
 static void send_failed(NMQ *q, IUINT32 sn) {
@@ -321,7 +324,7 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
         p = decode_uint8(&cmd, p);
 
         if (CMD_DATA != cmd && CMD_ACK != cmd && CMD_WND_REQ != cmd
-            && CMD_WND_ANS != cmd /*&& CMD_FIN != cmd*/) {// drop this pkt if could not understand cmd
+            && CMD_WND_ANS != cmd && CMD_FIN != cmd) {// drop this pkt if could not understand cmd
             fprintf(stderr, "wrong cmd: %d\n", cmd);
             return NMQ_ERR_WRONG_CMD;
         }
@@ -377,7 +380,9 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
         } else if (CMD_WND_ANS == cmd) {
             fprintf(stderr, "cmd_wnd_ans, wnd: %u, una: %u, rmt_wnd: %u, snd_nxt: %u, nsnd_buf: %u, nsnd_que: %u\n",
                     wnd, una, q->rmt_wnd, q->snd_nxt, (q->snd_nxt - q->snd_una), q->nsnd_que);
-//        } else if (CMD_FIN == cmd) {
+        } else if (CMD_FIN == cmd) {
+            fprintf(stderr, "peer eof. sn: %u\n", sn);
+            q->peer_fin_sn = sn;
         } else {
             fprintf(stderr, "unreachable branch!\n");
             assert(0);
@@ -432,7 +437,7 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
             break;
         }
     }
-    fprintf(stderr, "\nnext_packet_size: %d, buf_size: %d, p - buf: %d\n", rcvq_size, buf_size, (p - buf));
+    fprintf(stderr, "\next_packet_size: %d, buf_size: %d, p - buf: %ld\n", rcvq_size, buf_size, (p - buf));
 
     if (p - buf != rcvq_size) {
         return NMQ_ERR_RCV_QUE_INCONSISTANCE;
@@ -445,7 +450,7 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
 IINT32 nmq_output(NMQ *q, const char *data, const int len) {
     assert(q->output_cb != NULL);
 
-    if (len > 0) {
+    if (len > 0 || len == NMQ_EOF) {
         return q->output_cb(data, len, q, q->arg);
     }
     return NMQ_NO_DATA;
@@ -1057,6 +1062,7 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
     q->failure_cb = NULL;
 //    q->recv_cb = NULL;
 
+    q->peer_fin_sn = 0;
     q->fin_sn = 0;
     q->send_done_cb = NULL;
 
@@ -1080,6 +1086,14 @@ void check_send_done(NMQ *q) {
         fprintf(stderr, "send completed\n");
         if (q->send_done_cb) {
             q->send_done_cb(q);
+        }
+    }
+}
+
+void check_recv_done(NMQ *q) {
+    if (q->peer_fin_sn > 0) {
+        if (q->rcv_nxt > q->peer_fin_sn) {
+            nmq_output(q, NULL, NMQ_EOF);
         }
     }
 }
@@ -1191,7 +1205,6 @@ IUINT32 nmq_get_conv(const char *buf) {
 static inline IUINT32 modsn(IUINT32 sn, IUINT32 moder) {
     return (sn + moder) % moder;
 }
-
 // } util
 
 // nmq helper functions

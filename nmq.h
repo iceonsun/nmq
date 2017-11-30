@@ -46,13 +46,16 @@ extern "C" {
 #define NMQ_RTO_DEF 200
 #define NMQ_RTO_MAX 60000
 
+
 #define NMQ_NO_DATA (0)
-#define NMQ_ERR_UNITIALIZED (-1)
+#define NMQ_EOF (-1)
 #define NMQ_ERR_CONV_DIFF (-2)
 #define NMQ_ERR_WRONG_CMD (-3)
 #define NMQ_ERR_INVALID_SN (-4)
 #define NMQ_ERR_DUPLICATE_SN (-5)
 #define NMQ_ERR_RCV_QUE_INCONSISTANCE (-6)
+#define NMQ_ERR_UNITIALIZED (-7)
+
 #define NMQ_ERR_MSG_SIZE (-10)
 #define NMQ_ERR_MSG_BROKEN (-11)
 #define ERR_DATA_TOO_LONG (-12)
@@ -177,6 +180,7 @@ typedef struct nmq_s {
     void (*failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
 //    void (*recv_cb)(struct nmq_s *q, const char *buf, const int nlen);
 
+    IUINT32 peer_fin_sn;
     char fin_sn;
     void (*send_done_cb)(struct nmq_s *nmq);
 } NMQ;
