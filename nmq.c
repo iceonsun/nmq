@@ -164,17 +164,17 @@ static void flush_snd_buf(NMQ *q) {
         }
 
         if (need_send) {
-//            fprintf(stderr, "sn: %u, ", s->sn);
             fprintf(stderr,
-                    "peer: %ld, sending seg: %p, rcv_wnd: %u, cwnd: %u, sn: %u, len: %u, nsnd_nxt: %d, snd_una: %d nsnd_que: %d, rto: %u, sendts: %u, resendts:%u, curr: %u, n_timeout: %d, n_loss: %d\n",
-                    (long) q->arg, s, rcv_wnd, q->fc.cwnd, s->sn, s->len, q->snd_nxt, q->snd_una, q->nsnd_que, s->rto,
-                    s->sendts, s->resendts, current, n_timeout, n_loss);
+                    "peer: %ld, sending seg: %p, rcv_wnd: %u, cwnd: %u, sn: %u, len: %u, last sendts: %u, nsnd_nxt: %d, rcv_nxt: %u, snd_una: %d nsnd_que: %d, rto: %u, resendts:%u, curr: %u, n_timeout: %d, n_loss: %d\n",
+                    (long) q->arg, s, rcv_wnd, q->fc.cwnd, s->sn, s->len, s->sendts, q->snd_nxt, q->rcv_nxt, q->snd_una, q->nsnd_que, s->rto,
+                    s->resendts, current, n_timeout, n_loss);
             s->n_sent++;
             s->wnd = rcv_wnd;
             s->una = q->rcv_nxt;    //  figure out diff among snd_una, una, rcv_nxt
             s->sendts = current;
             // note: s->cmd, s->conv, s->sn and s->frag must not be updated here. they are assigned values in #sndq2buf
             s->resendts = s->rto + current;
+
             if (s->len + (p - buf) >= q->NMQ_MSS) {   // buf is not enough to hold another segment
                 nmq_output(q, buf, p - buf);  // emit buf first
                 p = buf;    // reset p to buf
@@ -235,10 +235,11 @@ static IINT8 input_segment(NMQ *q, segment *s) {
 //    fprintf(stderr, "peer %ld: input segment ,seg: %p, receive sn: %u,  s->una: %u, rmt_wnd: %u, nsnd_buf: %u\n",  (
 //            long) q->arg, s, s->sn, s->una);
 //
-//    fprintf(stderr, "peer %ld, input segment, s->sn: %u, s->una: %u, rmt_wnd: %u, snd_nxt: %u, nsnd_buf: %u, nsnd_que: %u\n",
-//    q->arg, s->sn, s->una, q->rmt_wnd, q->snd_nxt, (q->snd_nxt - q->snd_una), q->nsnd_que);
+    fprintf(stderr, "peer %ld, input segment, s->sn: %u, cmd: %d, frag: %d, wnd: %u, sendts: %u, len: %u, s->una: %u, rmt_wnd: %u, snd_nxt: %u, nsnd_buf: %u, nsnd_que: %u\n",
+    q->arg, s->sn, s->cmd, s->frag, s->wnd, s->sendts, s->len, s->una, q->rmt_wnd, q->snd_nxt, (q->snd_nxt - q->snd_una), q->nsnd_que);
 
     if ((s->sn < q->rcv_nxt) || (s->sn >= (q->rcv_nxt + q->MAX_RCV_BUF_NUM))) {  // out of range
+        fprintf(stderr, "%s, s->sn: %u, s->una: %u ,q->rcv_nxt: %u\n", __FUNCTION__, s->sn, s->una , q->rcv_nxt);
         return NMQ_ERR_INVALID_SN;
     }
 
@@ -246,13 +247,17 @@ static IINT8 input_segment(NMQ *q, segment *s) {
         // important! ack seg may get lost.
         // if we receive this seg again, we believe ack seg is lost.
         // we set ack again to resend ack during next flush once ack is lost.
-        set_ack_ts(q, s->sn, q->current); //todo: ??don't set ack. because this will get rtt wrong???
+        // in case peer sends all data (not closed), and server received them all. but server acks for last sn are lost.
+        // if not set_ack_ts here, server will not respond to client.
+        // this prevent that situation from happening.
+        set_ack_ts(q, s->sn, s->sendts);
         return NMQ_ERR_DUPLICATE_SN;
     }
 
     if (q->nrcv_buf >= q->MAX_RCV_BUF_NUM) {
         return NMQ_ERR_RCV_BUF_NO_MEM;
     }
+
 
     dlnode *prev;   // backward iteration. because we believe s is usually a new segment
     for (prev = q->rcv_buf.prev; prev != &q->rcv_buf; prev = prev->prev) {
@@ -263,11 +268,12 @@ static IINT8 input_segment(NMQ *q, segment *s) {
     }
 
     fprintf(stderr,
-            "peer: %ld, input seg: %p, wnd: %u, cwnd: %u, sn: %u, len: %u, nsnd_nxt: %d, snd_una: %d nsnd_que: %d, current: %u\n",
-            (long) q->arg, s, s->wnd, q->fc.cwnd, s->sn, s->len, q->snd_nxt, q->snd_una, q->nsnd_que,
+            "peer: %ld, input seg: %p, wnd: %u, cwnd: %u, sn: %u, len: %u, sendts: %u nsnd_nxt: %d, snd_una: %d nsnd_que: %d, current: %u\n",
+            (long) q->arg, s, s->wnd, q->fc.cwnd, s->sn, s->len, s->sendts, q->snd_nxt, q->snd_una, q->nsnd_que,
             (q->current) % 10000);
 
-    set_ack_ts(q, s->sn, q->current);
+    set_ack_ts(q, s->sn, s->sendts);
+//    set_ack_ts(q, s->sn, q->current); bug. here!!!
 
     dlist_add_after(prev, &s->head);
     q->nrcv_buf++;
@@ -352,6 +358,10 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 
         size -= (len + SEG_HEAD_SIZE);
 
+        if (sn == 0) {
+            fprintf(stderr, "");
+        }
+
         if (CMD_DATA == cmd || CMD_FIN == cmd) {
             if (CMD_FIN == cmd) {
                 fprintf(stderr, "peer eof. sn: %u\n", sn);
@@ -369,7 +379,7 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 
             if (s->len) {
                 memcpy(s->data, p, s->len);
-                p += s->len;
+//                p += s->len;
             }
             IINT8 ret = input_segment(q, s);
             if (ret != 0) {
@@ -391,6 +401,9 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
         } else {
             fprintf(stderr, "unreachable branch!\n");
             assert(0);
+        }
+        if (len) {
+            p += len;
         }
     }
 
@@ -504,7 +517,7 @@ IINT32 nmq_send(NMQ *q, const char *data, const int len) {
         dlist_add_tail(&q->snd_que,
                        &s->head); // attention: add s->head to tail, not s. when can retrieve s from s->head
     }
-    fprintf(stderr, "%s, len: %d, frag: %d\n", __FUNCTION__, len, tot);
+    fprintf(stderr, "%s, len: %d, tot frag: %d\n", __FUNCTION__, len, tot);
 
     q->nsnd_que += tot;
 
@@ -687,11 +700,12 @@ static void count_repeat_acks(NMQ *q, IUINT32 maxack) {
 // must before input_segments
 static void input_acks(NMQ *q, const char *p, IUINT32 len, const IUINT32 old_una) {
     IUINT32 maxack = 0;
-    IUINT32 nacks = len / (2 * sizeof(IUINT32));
+    const int UNIT = 2 * sizeof(IUINT32);
+    IUINT32 nacks = len / UNIT;
 
-    fprintf(stderr, "%s, ", __FUNCTION__);
-    while (len >= 2) {
-        len -= (2 * sizeof(IUINT32));
+    fprintf(stderr, "%s, len: %d, ", __FUNCTION__, len);
+    while (len >= UNIT) {
+        len -= UNIT;
         IUINT32 ack_sn, ack_ts_send;
         p = decode_uint32(&ack_sn, p);
         p = decode_uint32(&ack_ts_send, p);
@@ -886,7 +900,6 @@ static inline void update_rtt(NMQ *q, IUINT32 sn, IUINT32 sendts) {
     if (s->sendts == sendts) {
         IUINT32 rtt = q->current - sendts;
         rtt_estimator(q, &q->rto_helper, rtt);
-
     }
 }
 
