@@ -27,6 +27,9 @@ static IINT32 sndq2buf(NMQ *q);
 
 static IINT32 rcvbuf2q(NMQ *q);
 
+static IINT32 do_recv(NMQ *q, char *buf, const int buf_size);
+static inline void append_fin(NMQ *q);
+
 static IINT8 input_segment(NMQ *q, segment *s);
 
 static void flush_snd_buf(NMQ *q);
@@ -105,6 +108,7 @@ static inline void *nmq_free(void *addr);
 static inline void allocate_mem(NMQ *q);
 
 static inline void check_recv_done(NMQ *q);
+
 static inline void check_send_done(NMQ *q);
 
 static inline int is_shutdowned(NMQ *q);
@@ -502,6 +506,19 @@ IINT32 nmq_send(NMQ *q, const char *data, const int len) {
     q->nsnd_que += tot;
 
     return (IINT32) (phead - data);
+}
+
+// caution. must pay attention to fields that are assigned. they should be equal to nmq_send
+void append_fin(NMQ *q) {
+    segment *s = nmq_new_segment(0);
+    s->conv = q->conv;
+    s->cmd = CMD_FIN;
+    s->n_sent = 0;
+    s->frag = 0;
+    s->len = 0;
+    s->data = 0;
+    dlist_add_after(&q->snd_que, &s->head);
+    q->nsnd_que++;
 }
 
 // < 0 for error.
@@ -1005,8 +1022,13 @@ void set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd) {
 
 
 void nmq_shutdown_send(NMQ *q, nmq_send_done_cb cb) {
-    q->send_done_cb = cb;
-    q->fin_sn = 1;
+    if (!q->fin_sn) {
+        q->send_done_cb = cb;
+        q->fin_sn = 1;
+        append_fin(q);
+    } else {
+        fprintf(stderr, "already shutdown!!\n");
+    }
 }
 
 // memory ops. {
