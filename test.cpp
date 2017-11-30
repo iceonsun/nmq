@@ -25,7 +25,11 @@ int udp_output(const char *buf, const int len, NMQ *kcp, void *user)
 	union { int id; void *ptr; } parameter;
 	fprintf(stderr, "udp_output: source: %ld, data: %p, len: %d\n\n", (long)user, buf, len);
 	parameter.ptr = user;
-	vnet->send(parameter.id, buf, len);
+    if (len >= 0) {
+        vnet->send(parameter.id, buf, len);
+    } else if (len == NMQ_EOF) {
+        fprintf(stderr, "udp_output: source %ld  eof.", (long)user);
+    }
 	return 0;
 }
 

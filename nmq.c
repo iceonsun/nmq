@@ -246,7 +246,7 @@ static IINT8 input_segment(NMQ *q, segment *s) {
         // important! ack seg may get lost.
         // if we receive this seg again, we believe ack seg is lost.
         // we set ack again to resend ack during next flush once ack is lost.
-//        set_ack_ts(q, s->sn, q->current); // don't set ack. because this will get rtt wrong
+        set_ack_ts(q, s->sn, q->current); //todo: ??don't set ack. because this will get rtt wrong???
         return NMQ_ERR_DUPLICATE_SN;
     }
 
@@ -352,7 +352,11 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 
         size -= (len + SEG_HEAD_SIZE);
 
-        if (CMD_DATA == cmd) {
+        if (CMD_DATA == cmd || CMD_FIN == cmd) {
+            if (CMD_FIN == cmd) {
+                fprintf(stderr, "peer eof. sn: %u\n", sn);
+                q->peer_fin_sn = sn;
+            }
             segment *s = nmq_new_segment(len);
             s->conv = conv;
             s->cmd = cmd;   // no use
@@ -384,9 +388,6 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
         } else if (CMD_WND_ANS == cmd) {
             fprintf(stderr, "cmd_wnd_ans, wnd: %u, una: %u, rmt_wnd: %u, snd_nxt: %u, nsnd_buf: %u, nsnd_que: %u\n",
                     wnd, una, q->rmt_wnd, q->snd_nxt, (q->snd_nxt - q->snd_una), q->nsnd_que);
-        } else if (CMD_FIN == cmd) {
-            fprintf(stderr, "peer eof. sn: %u\n", sn);
-            q->peer_fin_sn = sn;
         } else {
             fprintf(stderr, "unreachable branch!\n");
             assert(0);
@@ -428,7 +429,9 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
     fprintf(stderr, "%s, frag: ", __FUNCTION__);
     FOR_EACH(node, nxt, &q->rcv_que) {
         segment *s = ADDRESS_FOR(segment, head, node);
-        memcpy(p, s->data, s->len);
+        if (s->len) {
+            memcpy(p, s->data, s->len);
+        }
         fprintf(stderr, "sn: %d, frag: %d, ", s->sn, s->frag);
         p += s->len;
         const IINT8 frag = s->frag;
@@ -517,8 +520,9 @@ void append_fin(NMQ *q) {
     s->frag = 0;
     s->len = 0;
     s->data = 0;
-    dlist_add_after(&q->snd_que, &s->head);
+    dlist_add_tail(&q->snd_que, &s->head);
     q->nsnd_que++;
+    fprintf(stderr, "append fin.\n");
 }
 
 // < 0 for error.

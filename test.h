@@ -239,7 +239,7 @@ public:
 
         current = iclock();
         auto it = tunnel->begin();
-        fprintf(stderr, "%s, size: %ld, time left: ", peerstr, tunnel->size());
+//        fprintf(stderr, "%s, size: %ld, time left: ", peerstr, tunnel->size());
 //        for (; (it != tunnel->end()); it++) {
 //            fprintf(stderr, " %d ", current - (*it)->ts());
 //            if (current >= (*it)->ts()) {    // timeout
