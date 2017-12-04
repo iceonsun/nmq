@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <errno.h>
 
 #include "dlist.h"
 #include "enc.h"
@@ -28,6 +29,9 @@ static IINT32 sndq2buf(NMQ *q);
 static IINT32 rcvbuf2q(NMQ *q);
 
 static IINT32 do_recv(NMQ *q, char *buf, const int buf_size);
+
+static IINT32 do_send(NMQ *q, const char *data, const int len);
+
 static inline void append_fin(NMQ *q);
 
 static IINT8 input_segment(NMQ *q, segment *s);
@@ -37,6 +41,9 @@ static void flush_snd_buf(NMQ *q);
 static void flush(NMQ *q);
 
 static void send_failed(NMQ *q, IUINT32 sn);
+
+
+static int fill_snd_buf(NMQ *q);
 
 // acks
 static void set_ack_ts(NMQ *q, IUINT32 sn, IUINT32 ts_send);
@@ -107,11 +114,13 @@ static inline void *nmq_free(void *addr);
 
 static inline void allocate_mem(NMQ *q);
 
-static inline void check_recv_done(NMQ *q);
+static inline int is_recv_done(NMQ *q);
 
 static inline void check_send_done(NMQ *q);
 
-static inline int is_shutdowned(NMQ *q);
+static inline int is_self_closed(NMQ *q);
+
+//static inline void check_done(NMQ *q);
 
 // enc
 // encode certain segment fields to buf. return new address that can encode
@@ -166,7 +175,8 @@ static void flush_snd_buf(NMQ *q) {
         if (need_send) {
             fprintf(stderr,
                     "peer: %ld, sending seg: %p, rcv_wnd: %u, cwnd: %u, sn: %u, len: %u, last sendts: %u, nsnd_nxt: %d, rcv_nxt: %u, snd_una: %d nsnd_que: %d, rto: %u, resendts:%u, curr: %u, n_timeout: %d, n_loss: %d\n",
-                    (long) q->arg, s, rcv_wnd, q->fc.cwnd, s->sn, s->len, s->sendts, q->snd_nxt, q->rcv_nxt, q->snd_una, q->nsnd_que, s->rto,
+                    (long) q->arg, s, rcv_wnd, q->fc.cwnd, s->sn, s->len, s->sendts, q->snd_nxt, q->rcv_nxt, q->snd_una,
+                    q->nsnd_que, s->rto,
                     s->resendts, current, n_timeout, n_loss);
             s->n_sent++;
             s->wnd = rcv_wnd;
@@ -202,6 +212,8 @@ static void flush_snd_buf(NMQ *q) {
 
 
 static void flush(NMQ *q) {
+    fill_snd_buf(q);
+
     window_probe_req2peer_if_need(q);
 
     acks2peer(q);
@@ -214,9 +226,48 @@ static void flush(NMQ *q) {
 
     window_probe_build_req_if_need(q);
 
+//    check_done(q);
     check_send_done(q);
+//
+//    is_recv_done(q);
+}
 
-    check_recv_done(q);
+int fill_snd_buf(NMQ *q) {
+    if (is_self_closed(q)) {
+        return 0;
+    }
+
+    if (!q->read_cb) {
+        return 0;
+    }
+
+//    assert(q->read_cb != NULL);
+
+    IUINT32 cwnd = get_snd_cwnd(q);
+    IINT32 nNeed = cwnd - (q->snd_nxt - q->snd_una + q->nsnd_que);
+    if (nNeed <= 0) {  // no need to
+        fprintf(stderr, "nNeed %d, cwnd: %u(q.rmt_wnd: %u), snd_nxt: %u, snd_una: %u, nsnd_que: %u\n", nNeed, cwnd,
+                q->rmt_wnd, q->snd_nxt, q->snd_una, q->nsnd_que);
+        return 0;
+    }
+    char buf[q->NMQ_MSS];
+    IINT32 nread = 0;
+    IINT32 i = 0;
+//    for (; i < nNeed; i++) {
+    for (; i < q->MAX_SND_BUF_NUM; i++) {   // read q.MAX_SND_BUF_NUM other than nNeed;
+        int err = 0;
+        nread = q->read_cb(q, buf, q->NMQ_MSS, &err);
+        if (nread <= 0) {
+            fprintf(stderr, "%s, read_cb return %d, errno: %d\n", __FUNCTION__, nread, err);
+            if (0 == nread || !WDBLOCK(err)) {
+                nmq_shutdown_send(q);
+            }
+            return nread;
+        }
+        do_send(q, buf, nread);
+    }
+    fprintf(stderr, "peer %ld, read %d lines.\n", q->arg, i);
+    return i;
 }
 
 static void send_failed(NMQ *q, IUINT32 sn) {
@@ -235,11 +286,14 @@ static IINT8 input_segment(NMQ *q, segment *s) {
 //    fprintf(stderr, "peer %ld: input segment ,seg: %p, receive sn: %u,  s->una: %u, rmt_wnd: %u, nsnd_buf: %u\n",  (
 //            long) q->arg, s, s->sn, s->una);
 //
-    fprintf(stderr, "peer %ld, input segment, s->sn: %u, cmd: %d, frag: %d, wnd: %u, sendts: %u, len: %u, s->una: %u, rmt_wnd: %u, snd_nxt: %u, nsnd_buf: %u, nsnd_que: %u\n",
-    q->arg, s->sn, s->cmd, s->frag, s->wnd, s->sendts, s->len, s->una, q->rmt_wnd, q->snd_nxt, (q->snd_nxt - q->snd_una), q->nsnd_que);
+    fprintf(stderr,
+            "peer %ld, input segment, s->sn: %u, cmd: %d, frag: %d, wnd: %u, sendts: %u, len: %u, s->una: %u, rmt_wnd: %u, snd_nxt: %u, nsnd_buf: %u, nsnd_que: %u\n",
+            q->arg, s->sn, s->cmd, s->frag, s->wnd, s->sendts, s->len, s->una, q->rmt_wnd, q->snd_nxt,
+            (q->snd_nxt - q->snd_una), q->nsnd_que);
 
     if ((s->sn < q->rcv_nxt) || (s->sn >= (q->rcv_nxt + q->MAX_RCV_BUF_NUM))) {  // out of range
-        fprintf(stderr, "%s, s->sn: %u, s->una: %u ,q->rcv_nxt: %u\n", __FUNCTION__, s->sn, s->una , q->rcv_nxt);
+        fprintf(stderr, "%s, s->sn: %u, s->una: %u ,q->rcv_nxt: %u\n", __FUNCTION__, s->sn, s->una, q->rcv_nxt);
+        q->ack_failures++;
         return NMQ_ERR_INVALID_SN;
     }
 
@@ -250,6 +304,7 @@ static IINT8 input_segment(NMQ *q, segment *s) {
         // in case peer sends all data (not closed), and server received them all. but server acks for last sn are lost.
         // if not set_ack_ts here, server will not respond to client.
         // this prevent that situation from happening.
+        q->ack_failures++;
         set_ack_ts(q, s->sn, s->sendts);
         return NMQ_ERR_DUPLICATE_SN;
     }
@@ -412,6 +467,7 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 //        flush_rcv_q(q);
 //    }
 
+    fill_snd_buf(q);
     return tot;
 }
 
@@ -439,13 +495,11 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
 
     char *p = buf;
     dlnode *node, *nxt;
-    fprintf(stderr, "%s, frag: ", __FUNCTION__);
     FOR_EACH(node, nxt, &q->rcv_que) {
         segment *s = ADDRESS_FOR(segment, head, node);
         if (s->len) {
             memcpy(p, s->data, s->len);
         }
-        fprintf(stderr, "sn: %d, frag: %d, ", s->sn, s->frag);
         p += s->len;
         const IINT8 frag = s->frag;
 
@@ -457,36 +511,19 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
             break;
         }
     }
-    fprintf(stderr, "\next_packet_size: %d, buf_size: %d, p - buf: %ld\n", rcvq_size, buf_size, (p - buf));
 
     if (p - buf != rcvq_size) {
         return NMQ_ERR_RCV_QUE_INCONSISTANCE;
     }
 
-
     return p - buf;
 }
 
-IINT32 nmq_output(NMQ *q, const char *data, const int len) {
-    assert(q->output_cb != NULL);
-
-    if (len > 0 || len == NMQ_EOF) {
-        return q->output_cb(data, len, q, q->arg);
-    }
-    return NMQ_NO_DATA;
-}
-
-IINT32 nmq_send(NMQ *q, const char *data, const int len) {
-    if (is_shutdowned(q)) {
+IINT32 do_send(NMQ *q, const char *data, const int len) {
+    if (is_self_closed(q)) {
         fprintf(stderr, "send already shutdown.\n");
         return NMQ_ERR_SEND_ON_SHUTDOWNED;
     }
-
-    if (!data || len <= 0) {
-        return 0;
-    }
-
-//    IINT32 ndone = sndq2buf(q);   // unecessary now. because snd_que has no limit
 
     const char *phead = data;
     IUINT32 tot = len / q->NMQ_MSS;
@@ -496,11 +533,6 @@ IINT32 nmq_send(NMQ *q, const char *data, const int len) {
         return ERR_DATA_TOO_LONG;
     }
 
-//    if (tot + q->nsnd_que > q->MAX_SND_QUE_NUM) {
-//        fprintf(stderr, "peer: %lu, current len: %u, max: %u, data unit required: %u\n", (long) q->arg, q->nsnd_que,
-//                q->MAX_SND_QUE_NUM, tot);
-//        return NMQ_ERR_SND_QUE_NO_MEM;
-//    }
 //  for (IUINT8 i = (IUINT8) (tot - 1); i >= 0; i--) {  caution!!! this is wrong because i > 0 is always true if i is IUINT8
     for (IUINT8 i = (IUINT8) tot; i > 0; i--) {     // frag order is n, n - 1 ... 0.
         const IUINT32 slen = (i > 1) ? q->NMQ_MSS : (len - (tot - 1) * q->NMQ_MSS);
@@ -517,11 +549,32 @@ IINT32 nmq_send(NMQ *q, const char *data, const int len) {
         dlist_add_tail(&q->snd_que,
                        &s->head); // attention: add s->head to tail, not s. when can retrieve s from s->head
     }
-    fprintf(stderr, "%s, len: %d, tot frag: %d\n", __FUNCTION__, len, tot);
 
     q->nsnd_que += tot;
 
     return (IINT32) (phead - data);
+}
+
+IINT32 nmq_output(NMQ *q, const char *data, const int len) {
+    assert(q->output_cb != NULL);
+
+    if (len > 0 || len == NMQ_SEND_EOF) {
+        return q->output_cb(data, len, q, q->arg);
+    }
+    return NMQ_NO_DATA;
+}
+
+IINT32 nmq_send(NMQ *q, const char *data, const int len) {
+    if (!data || len <= 0) {
+        return 0;
+    }
+
+    if (q->read_cb) {
+        fprintf(stderr, "input ways collide. read_cb is set.\n");
+        return NMQ_ERR_WRONG_INPUT;
+    }
+
+    return do_send(q, data, len);
 }
 
 // caution. must pay attention to fields that are assigned. they should be equal to nmq_send
@@ -544,6 +597,10 @@ IINT32 nmq_recv(NMQ *q, char *buf, const int buf_size) {
         return NMQ_ERR_UNITIALIZED;
     }
 
+    if (is_recv_done(q)) {
+        return NMQ_RECV_EOF;
+    }
+
     rcvbuf2q(q);    // in case there is no seg in que
 
     if (!list_not_empty(&q->rcv_que)) {
@@ -558,11 +615,8 @@ IINT32 nmq_recv(NMQ *q, char *buf, const int buf_size) {
 static IINT32 rcvbuf2q(NMQ *q) {
     IINT32 tot = 0;
     dlnode *node, *nxt;
-//    for (dlnode *node = q->rcv_buf.next, *nxt = node; node != &q->rcv_buf; node = nxt) {
     FOR_EACH(node, nxt, &q->rcv_buf) {
-//        nxt = nxt->next;
         segment *s = ADDRESS_FOR(segment, head, node);
-//        if ((s->sn == q->rcv_nxt) && (q->nrcv_que < q->MAX_RCV_QUE_NUM)) {
         if (s->sn == q->rcv_nxt) {
             q->rcv_sn_to_node[modsn(s->sn, q->MAX_RCV_BUF_NUM)] = NULL;
             segment *seg = ADDRESS_FOR(segment, head, node);
@@ -614,14 +668,19 @@ static IINT32 sndq2buf(NMQ *q) {
 // acks {
 static void acks2peer(NMQ *q) {
     if (!q->ackcount) {
+        if (q->ack_failures) {
+            fprintf(stderr, "ackcount is zero. build window probe answer!!!\n");
+            window_probe_ans2peer(q);   // build a window probe answer
+        }
+        q->ack_failures = 0;
         return;
     }
 
     const int UNIT = 2 * sizeof(IUINT32);
     const IUINT32 max_nack = q->NMQ_MSS / UNIT;
     const IUINT32 tot = UNIT * max_nack;
-    fprintf(stderr, "peer: %lu, acks2peer, ackcount: %d, current: %u\n", (
-            long) q->arg, q->ackcount, (q->current) % 10000);
+    fprintf(stderr, "peer: %lu, rcv_nxt: %u, una: %u, snd_nxt: %u, acks2peer, ackcount: %d, current: %u\n", (
+            long) q->arg, q->rcv_nxt, q->snd_una, q->snd_nxt, q->ackcount, (q->current) % 10000);
     for (int i = 0; i < q->ackcount; i++) {
         IUINT32 sn;
         decode_uint32(&sn, (const char *) (i * 2 + q->acklist));
@@ -661,6 +720,7 @@ static void acks2peer(NMQ *q) {
 
     nmq_delete_segment(s);
     q->ackcount = 0;    // important! must reset q.ackcount
+    q->ack_failures = 0;
 }
 
 // ack(sn) sent by peer, telling local that peer itself received segment(sn). The segment(sn) is sent by local.
@@ -899,6 +959,8 @@ static inline void update_rtt(NMQ *q, IUINT32 sn, IUINT32 sendts) {
     segment *s = ADDRESS_FOR(segment, head, q->snd_sn_to_node[modsn(sn, q->MAX_SND_BUF_NUM)]);
     if (s->sendts == sendts) {
         IUINT32 rtt = q->current - sendts;
+        q->rtt.n++;
+        q->rtt.tot += rtt;
         rtt_estimator(q, &q->rto_helper, rtt);
     }
 }
@@ -1024,7 +1086,7 @@ void nmq_set_output_cb(NMQ *q, nmq_output_cb cb) {
     }
 }
 
-void set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd) {
+void nmq_set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd) {
     nmq->MAX_SND_BUF_NUM = sndwnd;
     nmq->MAX_RCV_BUF_NUM = rcvwnd;
 }
@@ -1037,15 +1099,18 @@ void set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd) {
 //} nmq utils
 
 
-
-void nmq_shutdown_send(NMQ *q, nmq_send_done_cb cb) {
+void nmq_shutdown_send(NMQ *q) {
+    fprintf(stderr, "%s\n", __FUNCTION__);
     if (!q->fin_sn) {
-        q->send_done_cb = cb;
         q->fin_sn = 1;
         append_fin(q);
     } else {
         fprintf(stderr, "already shutdown!!\n");
     }
+}
+
+void nmq_set_read_cb(NMQ *q, nmq_read_cb cb) {
+    q->read_cb = cb;
 }
 
 // memory ops. {
@@ -1083,8 +1148,11 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
 
     q->ackmaxnum = 128;
     q->ackcount = 0;
+    q->ack_failures = 0;
 
     q->rto = NMQ_RTO_DEF;
+    q->rtt.n = 0;
+    q->rtt.tot = 0.0;
     q->nodelay = 1; // todo:
     q->ts_probe_wait = NMQ_PROBE_WAIT_MS_DEF;
     q->probe_pending = 0;
@@ -1103,7 +1171,7 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
 
     q->peer_fin_sn = 0;
     q->fin_sn = 0;
-    q->send_done_cb = NULL;
+//    q->send_done_cb = NULL;
 
     return q;
 }
@@ -1119,25 +1187,34 @@ static inline void allocate_mem(NMQ *q) {
     memset(q->acklist, 0, q->ackmaxnum * sizeof(IUINT32) * 2);
 }
 
-
+// either send_done or recv_done exists, it means self or peer closed.
 void check_send_done(NMQ *q) {
-    if (is_shutdowned(q) && !list_not_empty(&q->snd_que) && (!list_not_empty(&q->snd_buf))) {
+    if (is_self_closed(q) && !list_not_empty(&q->snd_que) && (!list_not_empty(&q->snd_buf))) {
         fprintf(stderr, "send completed\n");
-        if (q->send_done_cb) {
-            q->send_done_cb(q);
-        }
+        nmq_output(q, NULL, NMQ_SEND_EOF);
     }
 }
 
-void check_recv_done(NMQ *q) {
+//void check_done(NMQ *q) {
+//    // if true, it means peer is closed.
+//    // since we already finished our task, we no longer need to send to peer or recv from peer.
+//    // if peer want us send data it, it should never close itself.
+//    if (check_send_done(q) || is_recv_done(q)) {
+//        nmq_output(q, NULL, NMQ_EOF);
+//    }
+//}
+
+int is_recv_done(NMQ *q) {
     if (q->peer_fin_sn > 0) {
-        if (q->rcv_nxt > q->peer_fin_sn) {
-            nmq_output(q, NULL, NMQ_EOF);
+        if ((q->rcv_nxt > q->peer_fin_sn) && (!list_not_empty(&q->rcv_que))) {
+            fprintf(stderr, "recv completed\n");
+            return 1;
         }
     }
+    return 0;
 }
 
-int is_shutdowned(NMQ *q) {
+int is_self_closed(NMQ *q) {
     return q->fin_sn != 0;
 }
 
@@ -1145,7 +1222,8 @@ void nmq_destroy(NMQ *q) {
     nmq_free(q->snd_sn_to_node);
     nmq_free(q->rcv_sn_to_node);;
     nmq_free(q->acklist);
-    fprintf(stderr, "%s, snd_una: %u, rcv_nxt: %u, snd_nxt: %u\n", __FUNCTION__, q->snd_una, q->rcv_nxt, q->snd_nxt);
+    fprintf(stderr, "%s, snd_una: %u, rcv_nxt: %u, snd_nxt: %u, avg rtt: %lf\n", __FUNCTION__, q->snd_una, q->rcv_nxt,
+            q->snd_nxt, q->rtt.n != 0 ? (q->rtt.tot * 1.0) / (q->rtt.n) : -1);
     dlist *lists[] = {&q->snd_buf, &q->snd_que, &q->rcv_buf, &q->rcv_que, NULL};
     for (int i = 0; lists[i]; i++) {
         dlnode *node, *nxt;

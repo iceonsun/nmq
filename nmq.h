@@ -48,13 +48,14 @@ extern "C" {
 
 
 #define NMQ_NO_DATA (0)
-#define NMQ_EOF (-1)
-#define NMQ_ERR_CONV_DIFF (-2)
-#define NMQ_ERR_WRONG_CMD (-3)
-#define NMQ_ERR_INVALID_SN (-4)
-#define NMQ_ERR_DUPLICATE_SN (-5)
-#define NMQ_ERR_RCV_QUE_INCONSISTANCE (-6)
-#define NMQ_ERR_UNITIALIZED (-7)
+#define NMQ_SEND_EOF (-1)
+#define NMQ_RECV_EOF (-2)
+#define NMQ_ERR_CONV_DIFF (-4)
+#define NMQ_ERR_WRONG_CMD (-5)
+#define NMQ_ERR_INVALID_SN (-6)
+#define NMQ_ERR_DUPLICATE_SN (-7)
+#define NMQ_ERR_RCV_QUE_INCONSISTANCE (-8)
+#define NMQ_ERR_UNITIALIZED (-9)
 
 #define NMQ_ERR_MSG_SIZE (-10)
 #define NMQ_ERR_MSG_BROKEN (-11)
@@ -63,6 +64,7 @@ extern "C" {
 #define NMQ_ERR_SEND_ON_SHUTDOWNED (-15)
 #define NMQ_ERR_SND_QUE_NO_MEM (-14)
 #define NMQ_ERR_ACK_BUF_LEN (-20)
+#define NMQ_ERR_WRONG_INPUT (-21)
 // 1500 minus ip, udp  and kcp header size.
 #define NMQ_MSS_DEF 1458
 #define NMQ_HEAD_SIZE 24
@@ -76,6 +78,14 @@ extern "C" {
 
 #define ADDRESS_FOR(TYPE, MEMBER, mem_addr) \
     ((TYPE*)(((char *)(mem_addr)) - OFFSETOF(TYPE, MEMBER)))
+
+#ifdef EWOULDBLOCK
+#define WDBLOCK(ERR) \
+    ((ERR) == EAGAIN || (ERR) == EWOULDBLOCK)
+#else
+#define WDBLOCK(ERR) \
+    ((ERR) == EAGAIN)
+#endif
 
 typedef struct segment_s {
     dlist head;
@@ -121,6 +131,11 @@ typedef struct rto_helper_s {
 typedef void* (*nmq_malloc_fn)(size_t size);
 typedef void (*nmq_free_fn)(void *ptr);
 
+typedef struct rtt_counter_t {
+    IUINT32 n;
+    IINT64 tot;
+} rtt_counter_t;
+
 typedef struct nmq_s {
     IUINT32 conv;
     void *arg;
@@ -156,12 +171,14 @@ typedef struct nmq_s {
     IUINT32 ackmaxnum;
     IUINT32 *acklist;  // acklist[i] is sn, acklist[i]+1 is ts_send. size is 2 * MAX_RCV_BUF_NUM
     IUINT32 ackcount;
+    IUINT32 ack_failures;
 
     IUINT8 fc_on;
 //    flow_control_s flow_ctrl;
     fc_s fc;
 
     IUINT32 rto;
+    rtt_counter_t rtt;
 
     IUINT8 nodelay;
 
@@ -182,12 +199,15 @@ typedef struct nmq_s {
 
     IUINT32 peer_fin_sn;
     char fin_sn;
-    void (*send_done_cb)(struct nmq_s *nmq);
+//    void (*send_done_cb)(struct nmq_s *nmq);
+
+    IINT32 (*read_cb)(struct nmq_s *nmq, char *buf, int len, int *err);
 } NMQ;
 
 typedef IINT32 (*nmq_output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
 typedef void (*nmq_failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
-typedef void (*nmq_send_done_cb)(struct nmq_s *nmq);
+//typedef void (*nmq_send_done_cb)(struct nmq_s *nmq);
+typedef IINT32 (*nmq_read_cb)(struct nmq_s *nmq, char *buf, int len, int *err);
 
 //typedef void (*nmq_recv_cb)(NMQ *q, const char *buf, const int nlen);
 
@@ -196,6 +216,7 @@ void nmq_update(NMQ *q, IUINT32 current);
 void nmq_flush(NMQ *q, IUINT32 current);
 // upper <-> nmq
 IINT32 nmq_send(NMQ *q, const char *data, const int len);
+void nmq_shutdown_send(NMQ *q);
 
 // > 0 for specifc reason.
 // < 0 if buf is too small and -retval is size that buf should be.
@@ -207,9 +228,9 @@ NMQ *nmq_new(IUINT32 conv, void *arg);
 void nmq_destroy(NMQ *q);
 IUINT32 nmq_get_conv(const char *buf);
 void nmq_set_output_cb(NMQ *q, nmq_output_cb cb);
-void set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd);
+void nmq_set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd);
 //void nmq_set_recv_cb(NMQ *q, nmq_recv_cb cb);
-void nmq_shutdown_send(NMQ *q, nmq_send_done_cb cb);
+void nmq_set_read_cb(NMQ *q, nmq_read_cb cb);
 
 segment *nmq_new_segment(IUINT32 data_size);
 void nmq_delete_segment(segment *seg);

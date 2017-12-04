@@ -189,12 +189,18 @@ public:
         DelayTunnel *tunnel = &p12;
         if (peer == 1) {
             tx1++;
-            if (r12.random() < lostrate) return; //todo:
+            if (r12.random() < lostrate) {
+                fprintf(stderr, "drop. lost rate test.\n");
+                return;
+            }
             if ((int) p12.size() >= nmax) return;
         } else {
             tunnel = &p21;
             tx2++;
-            if (r21.random() < lostrate) return;  //todo: uncoment for lost rate test
+            if (r21.random() < lostrate) {
+                fprintf(stderr, "drop. lost rate test.\n");
+                return;  //todo: uncoment for lost rate test
+            }
             if ((int) p21.size() >= nmax) return;
         }
 

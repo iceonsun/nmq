@@ -9,6 +9,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/errno.h>
+#include <fcntl.h>
 
 #include "enc.h"
 #include "test.h"
@@ -19,16 +21,24 @@
 // 模拟网络
 LatencySimulator *vnet;
 
+int g_done = 0;
+
+int sdone = 0;
+int rdone = 0;
+int inFd = -1;
+int outFd = -1;
+
 // 模拟网络：模拟发送一个 udp包
 int udp_output(const char *buf, const int len, NMQ *kcp, void *user)
 {
 	union { int id; void *ptr; } parameter;
-	fprintf(stderr, "udp_output: source: %ld, data: %p, len: %d\n\n", (long)user, buf, len);
+	fprintf(stderr, "udp_output: source: %ld, data: %p, len: %d\n", (long)user, buf, len);
 	parameter.ptr = user;
     if (len >= 0) {
         vnet->send(parameter.id, buf, len);
-    } else if (len == NMQ_EOF) {
-        fprintf(stderr, "udp_output: source %ld  eof.", (long)user);
+    } else if (len == NMQ_SEND_EOF) {
+        fprintf(stderr, "udp_output: source %ld  eof.\n", (long)user);
+        g_done = 1;
     }
 	return 0;
 }
@@ -137,6 +147,7 @@ void test(int mode)
 //			 }
 //		}
 
+        // app -> peer 1
         for (; current >= slap; slap += 20) {
             ((IUINT32*)buffer)[0] = index;
             ((IUINT32*)buffer)[1] = current;
@@ -230,10 +241,8 @@ void test(int mode)
 //	char ch; scanf("%c", &ch);
 }
 
-int done = 0;
-
 void nmq_done(NMQ *q) {
-    done = 1;
+    g_done = 1;
     fprintf(stderr, "nmq_done!!!\n");
 }
 // 测试用例
@@ -249,12 +258,6 @@ void test_shutdown_send(int mode)
     NMQ *kcp1 = nmq_new(0x11223344, (void*)1);
     NMQ *kcp2 = nmq_new(0x11223344, (void*)2);
 
-//	nmq_set_dup_acks_limit(kcp1, 2);
-//	nmq_set_dup_acks_limit(kcp2, 2);
-
-//	nmq_set_trouble_tolerance(kcp1, 8);
-// 	nmq_set_trouble_tolerance(kcp2, 8);
-
     // 设置kcp的下层输出，这里为 udp_output，模拟udp网络输出函数
     nmq_set_output_cb(kcp1, udp_output);
     nmq_set_output_cb(kcp2, udp_output);
@@ -264,8 +267,6 @@ void test_shutdown_send(int mode)
     nmq_set_dup_acks_limit(kcp2, 2);
     nmq_start(kcp1);
     nmq_start(kcp2);
-//	kcp1->output = udp_output;
-//	kcp2->output = udp_output;
 
     IUINT32 current = iclock();
     IUINT32 slap = current + 20;
@@ -276,50 +277,20 @@ void test_shutdown_send(int mode)
     int count = 0;
     int maxrtt = 0;
 
-    // 配置窗口大小：平均延迟200ms，每20ms发送一个包，
-    // 而考虑到丢包重发，设置最大收发窗口为128
-//	ikcp_wndsizefn_output(kcp1, 128, 128);
-//	ikcp_wndsize(kcp2, 128, 128);
-
-    // 判断测试用例的模式
-//	if (mode == 0) {
-//		// 默认模式
-//		ikcp_nodelay(kcp1, 0, 10, 0, 0);
-//		ikcp_nodelay(kcp2, 0, 10, 0, 0);
-//	}
-//	else if (mode == 1) {
-//		// 普通模式，关闭流控等
-//		ikcp_nodelay(kcp1, 0, 10, 0, 1);
-//		ikcp_nodelay(kcp2, 0, 10, 0, 1);
-//	}	else {
-//		// 启动快速模式
-//		// 第二个参数 nodelay-启用以后若干常规加速将启动
-//		// 第三个参数 interval为内部处理时钟，默认设置为 10ms
-//		// 第四个参数 resend为快速重传指标，设置为2
-//		// 第五个参数 为是否禁用常规流控，这里禁止
-//		ikcp_nodelay(kcp1, 1, 10, 2, 1);
-//		ikcp_nodelay(kcp2, 1, 10, 2, 1);
-//		kcp1->rx_minrto = 10;
-//		kcp1->fastresend = 1;
-//	}
-
-
     char buffer[2000];
     int hr;
     IUINT32 cnt = 0;
 
     IUINT32 ts1 = iclock();
 
-    while (!done) {
+    while (!g_done) {
         isleep(1);
         current = iclock();
-//		fprintf(stderr, "nmq_update 1: ---------------------------------\n");
         nmq_update(kcp1, iclock());
 
-//		fprintf(stderr, "nmq_update 2: ---------------------------------\n");
         nmq_update(kcp2, iclock());
 
-        while (cnt < 10 && !done) {
+        while (cnt < 10 && !g_done) {
             ((IUINT32*)buffer)[0] = index;
             ((IUINT32*)buffer)[1] = current;
 
@@ -329,54 +300,41 @@ void test_shutdown_send(int mode)
             }
             cnt++;
             if (cnt == 10) {
-                nmq_shutdown_send(kcp1, nmq_done);
+                nmq_shutdown_send(kcp1);
             }
         }
 
-//		fprintf(stderr, "peer 1 -> 2 nmq_input: ---------------------------------\n");
         // 处理虚拟网络：检测是否有udp包从p1->p2
-        while (!done) {
+        while (!g_done) {
             hr = vnet->recv(2, buffer, 2000);
 //            fprintf(stderr, "peer 2. read buf to peer 2. nmq_input, hr: %d\n", hr);
             if (hr < 0) break;
             // 如果 p2收到udp，则作为下层协议输入到kcp2
             nmq_input(kcp2, buffer, hr);
-//            nmq_update(kcp1, iclock());
-//            nmq_update(kcp2, iclock());
         }
 
-//		fprintf(stderr, "peer 2 -> 1 nmq_input: ---------------------------------\n");
         // 处理虚拟网络：检测是否有udp包从p2->p1
-        while (!done) {
+        while (!g_done) {
             hr = vnet->recv(1, buffer, 2000);
 //            fprintf(stderr, "peer 1. read buf to peer 1. nmq_input, hr: %d\n", hr);
             if (hr < 0) break;
             // 如果 p1收到udp，则作为下层协议输入到kcp1
             IINT32 ret =  nmq_input(kcp1, buffer, hr);
-//            nmq_update(kcp1, iclock());
-//            nmq_update(kcp2, iclock());
-//            fprintf(stderr, "peer: %lu, nmq_input: ret %d\n", (long)kcp1->arg, ret);
         }
 
-//		fprintf(stderr, "peer 2 send: ---------------------------------\n");
         // kcp2接收到任何包都返回回去
-        while (!done) {
+        while (!g_done) {
             hr = nmq_recv(kcp2, buffer, 2000);
-//            fprintf(stderr, "peer 2. nmq_recv, hr: %d\n", hr);
             // 没有收到包就退出
             if (hr <= 0) {
                 break;
             }
-//            fprintf(stderr, "peer 2. nmq_send\n");
             // 如果收到包就回射
             nmq_send(kcp2, buffer, hr);     // if error occurs, then data will be lost.
-//            nmq_update(kcp1, iclock());
-//            nmq_update(kcp2, iclock());
         }
 
-//		fprintf(stderr, "peer 1 output: ---------------------------------\n");
         // kcp1收到kcp2的回射数据
-        while (!done) {
+        while (!g_done) {
             hr = nmq_recv(kcp1, buffer, 2000);
 //            fprintf(stderr, "peer 1. nmq_recv, hr: %d\n", hr);
             // 没有收到包就退出
@@ -399,7 +357,6 @@ void test_shutdown_send(int mode)
             if (rtt > (IUINT32)maxrtt) maxrtt = rtt;
 
             fprintf(stderr, "[RECV] mode=%d sn=%d rtt=%d\n", mode, (int)sn, (int)rtt);
-//			printf("[RECV] mode=%d sn=%d rtt=%d\n", mode, (int)sn, (int)rtt);
         }
         if (next >= MAX_SN) break;
     }
@@ -411,8 +368,98 @@ void test_shutdown_send(int mode)
 
     const char *names[3] = { "default", "normal", "fast" };
     printf("%s mode result (%dms):\n", names[mode], (int)ts1);
-//	printf("press enter to next ...\n");
-//	char ch; scanf("%c", &ch);
+}
+
+IINT32 read_cb(NMQ *q, char *buf, int len, int *err) {
+    IINT32 n  =  read(inFd, buf, len);
+    if (n <= 0) {
+        *err = errno;
+    }
+    return n;
+}
+
+void test_read_cb() {
+    // 创建模拟网络：丢包率10%，Rtt 60ms~125ms
+    vnet = new LatencySimulator(50, 60, 125);
+
+    // 创建两个端点的 kcp对象，第一个参数 conv是会话编号，同一个会话需要相同
+    // 最后一个是 user参数，用来传递标识
+    NMQ *kcp1 = nmq_new(0x11223344, (void*)1);
+    NMQ *kcp2 = nmq_new(0x11223344, (void*)2);
+
+    // 设置kcp的下层输出，这里为 udp_output，模拟udp网络输出函数
+    nmq_set_output_cb(kcp1, udp_output);
+    nmq_set_output_cb(kcp2, udp_output);
+    nmq_set_interval(kcp1, 50);
+    nmq_set_interval(kcp2, 50);
+    nmq_set_wnd_size(kcp1, 50, 50);
+    nmq_set_wnd_size(kcp2, 50, 50);
+    nmq_set_dup_acks_limit(kcp1, 2);
+    nmq_set_dup_acks_limit(kcp2, 2);
+    nmq_start(kcp1);
+    nmq_start(kcp2);
+
+    const char *fInName = "./test.in";
+    const char *fOutName = "./test.out";
+
+    inFd = open(fInName, O_RDONLY);
+    if (inFd < 0) {
+        fprintf(stderr, "failed to open %s for reading. error: %s\n", fInName, strerror(errno));
+        exit(1);
+    }
+
+    nmq_set_read_cb(kcp1, read_cb);
+
+    outFd = open(fOutName, O_WRONLY|O_CREAT|O_TRUNC);
+    if (outFd < 0) {
+        fprintf(stderr, "failed to open %s for writing. error: %s\n", fOutName, strerror(errno));
+        exit(2);
+    }
+
+    char buffer[2000];
+    int hr;
+
+    while (!sdone && !rdone) {
+        isleep(1);
+        IUINT32 current = iclock();
+        nmq_update(kcp1, current);
+        nmq_update(kcp2, current);
+
+        // 处理虚拟网络：检测是否有udp包从p1->p2
+        while (!rdone) {
+            hr = vnet->recv(2, buffer, 2000);
+//            fprintf(stderr, "peer 2. read buf to peer 2. nmq_input, hr: %d\n", hr);
+            if (hr < 0) break;
+            // 如果 p2收到udp，则作为下层协议输入到kcp2
+            nmq_input(kcp2, buffer, hr);
+        }
+
+        // p2 写到文件
+        while (!rdone) {
+            hr = nmq_recv(kcp2, buffer, 2000);
+            if (hr > 0) {
+                write(outFd, buffer, hr);
+            } else if (hr == NMQ_RECV_EOF) {
+                rdone = 1;
+                break;
+            } else {
+                break;
+            }
+        }
+
+        // p2 -> p1. ack
+        while (!sdone) {
+            hr = vnet->recv(1, buffer, 2000);
+            if (hr < 0) break;
+            nmq_input(kcp1, buffer, hr);
+        }
+    }
+
+
+    close(inFd);
+    close(outFd);
+    nmq_destroy(kcp1);
+    nmq_destroy(kcp2);
 }
 
 int main()
@@ -452,10 +499,11 @@ int main()
 //    setvbuf(stderr, buf, _IOFBF, 100000);
 
 //	test(0);	// 默认模式，类似 TCP：正常模式，无快速重传，常规流控
-    test_shutdown_send(0);
+//    test_shutdown_send(0);
 //	test(1);	// 普通模式，关闭流控等
 //	test(2);	// 快速模式，所有开关都打开，且关闭流控
 //    fclose(stderr);
+    test_read_cb();
 	return 0;
 }
 
