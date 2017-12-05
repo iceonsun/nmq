@@ -258,7 +258,7 @@ int fill_snd_buf(NMQ *q) {
         int err = 0;
         nread = q->read_cb(q, buf, q->NMQ_MSS, &err);
         if (nread <= 0) {
-            fprintf(stderr, "%s, read_cb return %d, errno: %d\n", __FUNCTION__, nread, err);
+//            fprintf(stderr, "%s, read_cb return %d, errno: %d\n", __FUNCTION__, nread, err);
             if (0 == nread || !WDBLOCK(err)) {
                 nmq_shutdown_send(q);
             }
