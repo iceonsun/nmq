@@ -131,10 +131,12 @@ typedef struct rto_helper_s {
 typedef void* (*nmq_malloc_fn)(size_t size);
 typedef void (*nmq_free_fn)(void *ptr);
 
-typedef struct rtt_counter_t {
-    IUINT32 n;
-    IINT64 tot;
-} rtt_counter_t;
+typedef struct nmq_stat_t {
+    IUINT32 nrtt;
+    IUINT64 nrtt_tot;
+    IUINT32 bytes_send;
+    IUINT32 bytes_send_tot;
+} nmq_stat_t;
 
 typedef struct nmq_s {
     IUINT32 conv;
@@ -178,7 +180,7 @@ typedef struct nmq_s {
     fc_s fc;
 
     IUINT32 rto;
-    rtt_counter_t rtt;
+    nmq_stat_t stat;
 
     IUINT8 nodelay;
 

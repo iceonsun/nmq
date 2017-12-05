@@ -96,6 +96,8 @@ static inline void update_rmt_wnd(NMQ *q, IUINT32 rmt_wnd);
 // nmq utils
 static inline IINT8 dup_ack_limit(NMQ *q);
 
+static inline void init_stat(nmq_stat_t *stat);
+
 // return size of next packet in send_queue.
 static IUINT32 next_packet_size(dlist *list);
 
@@ -189,6 +191,7 @@ static void flush_snd_buf(NMQ *q) {
                 nmq_output(q, buf, p - buf);  // emit buf first
                 p = buf;    // reset p to buf
             }
+            q->stat.bytes_send_tot += s->len;
 
             p = encode_seg_and_data(s, p);
 
@@ -549,6 +552,8 @@ IINT32 do_send(NMQ *q, const char *data, const int len) {
         dlist_add_tail(&q->snd_que,
                        &s->head); // attention: add s->head to tail, not s. when can retrieve s from s->head
     }
+
+    q->stat.bytes_send += len;
 
     q->nsnd_que += tot;
 
@@ -959,8 +964,8 @@ static inline void update_rtt(NMQ *q, IUINT32 sn, IUINT32 sendts) {
     segment *s = ADDRESS_FOR(segment, head, q->snd_sn_to_node[modsn(sn, q->MAX_SND_BUF_NUM)]);
     if (s->sendts == sendts) {
         IUINT32 rtt = q->current - sendts;
-        q->rtt.n++;
-        q->rtt.tot += rtt;
+        q->stat.nrtt++;
+        q->stat.nrtt_tot += rtt;
         rtt_estimator(q, &q->rto_helper, rtt);
     }
 }
@@ -1041,6 +1046,14 @@ static inline IINT8 dup_ack_limit(NMQ *q) {
         return q->fc.DUP_ACK_LIM;
     }
     return NMQ_DUP_ACK_LIM_DEF;   // standard
+}
+
+
+void init_stat(nmq_stat_t *stat) {
+    stat->nrtt = 0;
+    stat->nrtt_tot = 0;
+    stat->bytes_send = 0;
+    stat->bytes_send_tot = 0;
 }
 
 // return size of next packet in send_queue.
@@ -1151,8 +1164,7 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
     q->ack_failures = 0;
 
     q->rto = NMQ_RTO_DEF;
-    q->rtt.n = 0;
-    q->rtt.tot = 0.0;
+    init_stat(&q->stat);
     q->nodelay = 1; // todo:
     q->ts_probe_wait = NMQ_PROBE_WAIT_MS_DEF;
     q->probe_pending = 0;
@@ -1222,8 +1234,11 @@ void nmq_destroy(NMQ *q) {
     nmq_free(q->snd_sn_to_node);
     nmq_free(q->rcv_sn_to_node);;
     nmq_free(q->acklist);
-    fprintf(stderr, "%s, snd_una: %u, rcv_nxt: %u, snd_nxt: %u, avg rtt: %lf\n", __FUNCTION__, q->snd_una, q->rcv_nxt,
-            q->snd_nxt, q->rtt.n != 0 ? (q->rtt.tot * 1.0) / (q->rtt.n) : -1);
+    fprintf(stderr,
+            "%s, snd_una: %u, rcv_nxt: %u, snd_nxt: %u, avg rtt: %lf. bytes_send: %d, bytes_output_tot: %d, ratio: %lf\n",
+            __FUNCTION__, q->snd_una, q->rcv_nxt,
+            q->snd_nxt, q->stat.nrtt != 0 ? (q->stat.nrtt_tot * 1.0) / (q->stat.nrtt) : -1, q->stat.bytes_send,
+            q->stat.bytes_send_tot, q->stat.bytes_send != 0 ? -1.0 : (q->stat.bytes_send_tot * 1.0 / q->stat.bytes_send));
     dlist *lists[] = {&q->snd_buf, &q->snd_que, &q->rcv_buf, &q->rcv_que, NULL};
     for (int i = 0; lists[i]; i++) {
         dlnode *node, *nxt;
@@ -1322,6 +1337,7 @@ IUINT32 nmq_get_conv(const char *buf) {
 static inline IUINT32 modsn(IUINT32 sn, IUINT32 moder) {
     return (sn + moder) % moder;
 }
+
 // } util
 
 // nmq helper functions
