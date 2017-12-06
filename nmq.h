@@ -210,7 +210,6 @@ typedef IINT32 (*nmq_output_cb)(const char *data, const int len, struct nmq_s *n
 typedef void (*nmq_failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
 //typedef void (*nmq_send_done_cb)(struct nmq_s *nmq);
 typedef IINT32 (*nmq_read_cb)(struct nmq_s *nmq, char *buf, int len, int *err);
-
 //typedef void (*nmq_recv_cb)(NMQ *q, const char *buf, const int nlen);
 
 void nmq_update(NMQ *q, IUINT32 current);

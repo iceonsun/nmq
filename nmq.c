@@ -34,6 +34,8 @@ static IINT32 do_send(NMQ *q, const char *data, const int len);
 
 static inline void append_fin(NMQ *q);
 
+static inline void fin_ops(NMQ *q, char cmd);
+
 static IINT8 input_segment(NMQ *q, segment *s);
 
 static void flush_snd_buf(NMQ *q);
@@ -416,10 +418,6 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 
         size -= (len + SEG_HEAD_SIZE);
 
-        if (sn == 0) {
-            fprintf(stderr, "");
-        }
-
         if (CMD_DATA == cmd || CMD_FIN == cmd) {
             if (CMD_FIN == cmd) {
                 fprintf(stderr, "peer eof. sn: %u\n", sn);
@@ -584,16 +582,20 @@ IINT32 nmq_send(NMQ *q, const char *data, const int len) {
 
 // caution. must pay attention to fields that are assigned. they should be equal to nmq_send
 void append_fin(NMQ *q) {
+    fin_ops(q, CMD_FIN);
+    fprintf(stderr, "append fin.\n");
+}
+
+void fin_ops(NMQ *q, char cmd) {
     segment *s = nmq_new_segment(0);
     s->conv = q->conv;
-    s->cmd = CMD_FIN;
+    s->cmd = cmd;
     s->n_sent = 0;
     s->frag = 0;
     s->len = 0;
-    s->data = 0;
+    s->data = 0;    // una is assigned in flush_snd_buf
     dlist_add_tail(&q->snd_que, &s->head);
     q->nsnd_que++;
-    fprintf(stderr, "append fin.\n");
 }
 
 // < 0 for error.
@@ -1218,7 +1220,7 @@ void check_send_done(NMQ *q) {
 
 int is_recv_done(NMQ *q) {
     if (q->peer_fin_sn > 0) {
-        if ((q->rcv_nxt > q->peer_fin_sn) && (!list_not_empty(&q->rcv_que))) {
+        if ((q->rcv_nxt > q->peer_fin_sn) && (!list_not_empty(&q->rcv_buf)) && (!list_not_empty(&q->rcv_que))) {
             fprintf(stderr, "recv completed\n");
             return 1;
         }
@@ -1238,7 +1240,7 @@ void nmq_destroy(NMQ *q) {
             "%s, snd_una: %u, rcv_nxt: %u, snd_nxt: %u, avg rtt: %lf. bytes_send: %d, bytes_output_tot: %d, ratio: %lf\n",
             __FUNCTION__, q->snd_una, q->rcv_nxt,
             q->snd_nxt, q->stat.nrtt != 0 ? (q->stat.nrtt_tot * 1.0) / (q->stat.nrtt) : -1, q->stat.bytes_send,
-            q->stat.bytes_send_tot, q->stat.bytes_send != 0 ? -1.0 : (q->stat.bytes_send_tot * 1.0 / q->stat.bytes_send));
+            q->stat.bytes_send_tot, q->stat.bytes_send == 0 ? -1.0 : (q->stat.bytes_send_tot * 1.0 / q->stat.bytes_send));
     dlist *lists[] = {&q->snd_buf, &q->snd_que, &q->rcv_buf, &q->rcv_que, NULL};
     for (int i = 0; lists[i]; i++) {
         dlnode *node, *nxt;
