@@ -357,6 +357,7 @@ void nmq_update(NMQ *q, IUINT32 current) {
 
 // ignore it
 void nmq_flush(NMQ *q, IUINT32 current) {
+    assert(q->inited == 1);
     q->current = current;
     flush(q);
 }
@@ -1194,7 +1195,7 @@ static inline void allocate_mem(NMQ *q) {
     q->snd_sn_to_node = (dlist **) nmq_malloc(sizeof(dlnode *) * q->MAX_SND_BUF_NUM);
     memset(q->snd_sn_to_node, 0, sizeof(dlnode *) * q->MAX_SND_BUF_NUM);
 
-    q->rcv_sn_to_node = (dlist **) nmq_malloc(sizeof(dlnode *) * q->MAX_SND_BUF_NUM);
+    q->rcv_sn_to_node = (dlist **) nmq_malloc(sizeof(dlnode *) * q->MAX_RCV_BUF_NUM);
     memset(q->rcv_sn_to_node, 0, sizeof(dlnode *) * q->MAX_RCV_BUF_NUM);
 
     q->acklist = (IUINT32 *) nmq_malloc(q->ackmaxnum * sizeof(IUINT32) * 2);
