@@ -20,8 +20,8 @@ extern "C" {
 
 
 #define NMQ_BUF_SIZE 1600
-#define NMQ_BUF_NUM_DEF 1500
-#define NMQ_QUE_NUM_DEF 1500
+#define NMQ_BUF_NUM_DEF 100
+#define NMQ_QUE_NUM_DEF 100
 
 #define NMQ_STATE_SEND_FAILURE (-1)
 
@@ -66,7 +66,7 @@ extern "C" {
 #define NMQ_ERR_ACK_BUF_LEN (-20)
 #define NMQ_ERR_WRONG_INPUT (-21)
 // 1500 minus ip, udp  and kcp header size.
-#define NMQ_MSS_DEF 1458
+#define NMQ_MSS_DEF 1400
 #define NMQ_HEAD_SIZE 24
 #define SEG_HEAD_SIZE NMQ_HEAD_SIZE
 
