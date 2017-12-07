@@ -20,7 +20,7 @@ extern "C" {
 
 
 #define NMQ_BUF_SIZE 1600
-#define NMQ_BUF_NUM_DEF 100
+#define NMQ_BUF_NUM_DEF 150
 #define NMQ_QUE_NUM_DEF 100
 
 #define NMQ_STATE_SEND_FAILURE (-1)
@@ -230,6 +230,7 @@ void nmq_destroy(NMQ *q);
 IUINT32 nmq_get_conv(const char *buf);
 void nmq_set_output_cb(NMQ *q, nmq_output_cb cb);
 void nmq_set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd);
+void nmq_set_fc_on(NMQ *q, IUINT8 on);
 //void nmq_set_recv_cb(NMQ *q, nmq_recv_cb cb);
 void nmq_set_read_cb(NMQ *q, nmq_read_cb cb);
 

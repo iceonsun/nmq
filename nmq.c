@@ -1107,6 +1107,12 @@ void nmq_set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd) {
     nmq->MAX_RCV_BUF_NUM = rcvwnd;
 }
 
+void nmq_set_fc_on(NMQ *q, IUINT8 on) {
+    if (!q->inited) {
+        q->fc_on = on;
+    }
+}
+
 //void nmq_set_recv_cb(NMQ *q, nmq_recv_cb cb) {
 //    if (!q->flushed) {
 //        q->recv_cb = cb;
@@ -1177,7 +1183,7 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
     q->MAX_PKT_TRY = NMQ_MAX_TRY;
     q->state = 0;
 
-    q->fc_on = 0;    // todo: change to off
+    q->fc_on = 0;   // default is off
     fc_init(q, &q->fc);
 
     q->output_cb = NULL;
