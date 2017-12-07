@@ -1146,8 +1146,8 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
     q->flush_interval = NMQ_FLUSH_INTERVAL_DEF;
     q->type = NMQ_TYPE_DGRAM;
 
-    q->MAX_SND_BUF_NUM = NMQ_BUF_NUM_DEF;   // must be initialized before rcv_sn_to_node
-    q->MAX_RCV_BUF_NUM = NMQ_BUF_NUM_DEF;
+    q->MAX_SND_BUF_NUM = NMQ_SND_BUF_NUM_DEF;   // must be initialized before rcv_sn_to_node
+    q->MAX_RCV_BUF_NUM = NMQ_RCV_BUF_NUM_DEF;
 //    q->MAX_SND_QUE_NUM = NMQ_QUE_NUM_DEF;
 //    q->MAX_RCV_QUE_NUM = NMQ_QUE_NUM_DEF;
     q->NMQ_MSS = NMQ_MSS_DEF;
