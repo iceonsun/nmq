@@ -1,5 +1,5 @@
 //
-// Created by Robert Cai on 10/20/17.
+// Created by on 10/20/17.
 //
 
 #ifndef SOCKNM_MARQ_H
@@ -74,6 +74,8 @@ extern "C" {
 #define NMQ_TYPE_DGRAM 0
 #define NMQ_TYPE_STREAM 1
 
+#define NMQ_FC_ALPHA 0.5
+
 #ifndef OFFSETOF
 #define OFFSETOF(TYPE, MEMBER) \
     ((size_t)&(((TYPE *)0)->MEMBER))
@@ -135,7 +137,8 @@ typedef struct rto_helper_s {
     IUINT32 rtt_seq;
 } rto_helper_s;
 
-typedef void* (*nmq_malloc_fn)(size_t size);
+typedef void *(*nmq_malloc_fn)(size_t size);
+
 typedef void (*nmq_free_fn)(void *ptr);
 
 typedef struct nmq_stat_t {
@@ -152,7 +155,6 @@ typedef struct nmq_s {
     IUINT32 current;
     IINT8 inited;
     IUINT16 flush_interval;
-    IUINT8 type;
 
     IUINT32 rmt_wnd;
 
@@ -170,12 +172,9 @@ typedef struct nmq_s {
     IUINT32 nrcv_que;    // number of packet in receive queue now
     IUINT32 nrcv_buf;    // number of packets in receive buf now
     IUINT32 nsnd_que;
-//    IUINT32 nsnd_buf; // nsnd_buf = snd_nxt - snd_una
     // estimate bandwidth. set this number to a number larger than bandwidth. unit: MSS + SEG_HEAD_SIZE
     IUINT32 MAX_SND_BUF_NUM;    // use limited or unlimited que?? current is limited que
-//    IUINT32 MAX_SND_QUE_NUM;  // no size limit
     IUINT32 MAX_RCV_BUF_NUM;
-//    IUINT32 MAX_RCV_QUE_NUM;
 
     IUINT32 ackmaxnum;
     IUINT32 *acklist;  // acklist[i] is sn, acklist[i]+1 is ts_send. size is 2 * MAX_RCV_BUF_NUM
@@ -201,8 +200,8 @@ typedef struct nmq_s {
 
     IUINT32 NMQ_MSS;    // not including head size. MSS + SEG_HEAD_SIZE + OTHER_PROTOCOL_HEAD_SIZE = MTU
 
-//    nmq_output_fn output_cb;
     IINT32 (*output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
+
     void (*failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
 //    void (*recv_cb)(struct nmq_s *q, const char *buf, const int nlen);
 
@@ -214,45 +213,64 @@ typedef struct nmq_s {
 } NMQ;
 
 typedef IINT32 (*nmq_output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
+
 typedef void (*nmq_failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
+
 //typedef void (*nmq_send_done_cb)(struct nmq_s *nmq);
 typedef IINT32 (*nmq_read_cb)(struct nmq_s *nmq, char *buf, int len, int *err);
 //typedef void (*nmq_recv_cb)(NMQ *q, const char *buf, const int nlen);
 
 void nmq_update(NMQ *q, IUINT32 current);
+
 // we regard
 void nmq_flush(NMQ *q, IUINT32 current);
+
 // upper <-> nmq
 IINT32 nmq_send(NMQ *q, const char *data, const int len);
+
 void nmq_shutdown_send(NMQ *q);
 
 // > 0 for specifc reason.
 // < 0 if buf is too small and -retval is size that buf should be.
 IINT32 nmq_recv(NMQ *q, char *buf, const int buf_size);
+
 IINT32 nmq_output(NMQ *q, const char *data, const int len);
+
 IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size);
 
 NMQ *nmq_new(IUINT32 conv, void *arg);
+
 void nmq_destroy(NMQ *q);
+
 IUINT32 nmq_get_conv(const char *buf);
+
 void nmq_set_output_cb(NMQ *q, nmq_output_cb cb);
+
 void nmq_set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd);
+
 void nmq_set_fc_on(NMQ *q, IUINT8 on);
+
 //void nmq_set_recv_cb(NMQ *q, nmq_recv_cb cb);
 void nmq_set_read_cb(NMQ *q, nmq_read_cb cb);
 
 segment *nmq_new_segment(IUINT32 data_size);
+
 void nmq_delete_segment(segment *seg);
 
 void nmq_start(NMQ *q); // first memeory allocation
 void nmq_set_ssthresh(NMQ *q, IUINT32 ssthresh);
+
 void nmq_set_init_cwnd(NMQ *q, IUINT32 cwnd);
+
 void nmq_set_trouble_tolerance(NMQ *q, IUINT8 n_tolerance);
+
 void nmq_set_dup_acks_limit(NMQ *q, IUINT8 lim);
+
 // MSS <= MTU - SEG_HEAD_SIZE - sum(OTHER_PROTOCOL_HEAD_SIZE)
 void nmq_set_mss(NMQ *q, IUINT32 MSS);
+
 void nmq_set_max_attempt(NMQ *q, IUINT32 max_try, nmq_failure_cb cb);
-//void nmq_set_max_que_len(NMQ *q, IUINT32 que_len);
+
 void nmq_set_interval(NMQ *q, IUINT32 interval);
 
 #ifdef __cplusplus

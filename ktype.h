@@ -1,5 +1,5 @@
 //
-// Created by Robert Cai on 10/20/17.
+// Created by on 10/20/17.
 //
 
 #ifndef SOCKNM_TYPES_H

@@ -503,7 +503,8 @@ int main()
 //	test(1);	// 普通模式，关闭流控等
 //	test(2);	// 快速模式，所有开关都打开，且关闭流控
 //    fclose(stderr);
-    test_read_cb();
+//    test_read_cb();
+    test(0);
 	return 0;
 }
 

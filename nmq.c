@@ -1,5 +1,5 @@
 //
-// Created by Robert Cai on 10/21/17.
+// Created on 10/21/17.
 //
 
 #include <stdio.h>
@@ -124,8 +124,6 @@ static inline void check_send_done(NMQ *q);
 
 static inline int is_self_closed(NMQ *q);
 
-//static inline void check_done(NMQ *q);
-
 // enc
 // encode certain segment fields to buf. return new address that can encode
 char *encode_seg_and_data(segment *s, char *buf);
@@ -152,9 +150,6 @@ static void flush_snd_buf(NMQ *q) {
 
     // 1 mss can hold many complete segments
     dlnode *node = NULL, *nxt = NULL;
-//    while (list_not_empty(&q->snd_buf)) { // caution!! this may cause error!
-//    fprintf(stderr, "peer: %ld, snd_cwnd: %u, cwnd: %u, rmt_wnd: %u, rcv_wnd: %u, snd_nxt: %d, snd_una: %d nsnd_que: %d,  sending ",
-//            (long)q->arg, get_snd_cwnd(q), q->fc.cwnd, q->rmt_wnd, rcv_wnd, q->snd_nxt, q->snd_una, q->nsnd_que);
     FOR_EACH(node, nxt, &q->snd_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
         IUINT8 need_send = 0;
@@ -177,11 +172,6 @@ static void flush_snd_buf(NMQ *q) {
         }
 
         if (need_send) {
-            fprintf(stderr,
-                    "peer: %ld, sending seg: %p, rcv_wnd: %u, cwnd: %u, sn: %u, len: %u, last sendts: %u, nsnd_nxt: %d, rcv_nxt: %u, snd_una: %d nsnd_que: %d, rto: %u, resendts:%u, curr: %u, n_timeout: %d, n_loss: %d\n",
-                    (long) q->arg, s, rcv_wnd, q->fc.cwnd, s->sn, s->len, s->sendts, q->snd_nxt, q->rcv_nxt, q->snd_una,
-                    q->nsnd_que, s->rto,
-                    s->resendts, current, n_timeout, n_loss);
             s->n_sent++;
             s->wnd = rcv_wnd;
             s->una = q->rcv_nxt;    //  figure out diff among snd_una, una, rcv_nxt
@@ -203,7 +193,6 @@ static void flush_snd_buf(NMQ *q) {
 
         }
     }
-//    fprintf(stderr, "\n");
 
     // flush remaining data
     if (p > buf) {
@@ -251,8 +240,6 @@ int fill_snd_buf(NMQ *q) {
     IUINT32 cwnd = get_snd_cwnd(q);
     IINT32 nNeed = cwnd - (q->snd_nxt - q->snd_una + q->nsnd_que);
     if (nNeed <= 0) {  // no need to
-        fprintf(stderr, "nNeed %d, cwnd: %u(q.rmt_wnd: %u), snd_nxt: %u, snd_una: %u, nsnd_que: %u\n", nNeed, cwnd,
-                q->rmt_wnd, q->snd_nxt, q->snd_una, q->nsnd_que);
         return 0;
     }
     char buf[q->NMQ_MSS];
@@ -262,7 +249,6 @@ int fill_snd_buf(NMQ *q) {
     for (; i < q->MAX_SND_BUF_NUM; i++) {   // read q.MAX_SND_BUF_NUM other than nNeed;
         int err = 0;
         nread = q->read_cb(q, buf, q->NMQ_MSS, &err);
-        fprintf(stderr, "%s, read_cb return %d, errno: %d\n", __FUNCTION__, nread, err);
         if (nread <= 0) {
             if (0 == nread || !WDBLOCK(err)) {
                 nmq_shutdown_send(q);
@@ -271,7 +257,6 @@ int fill_snd_buf(NMQ *q) {
         }
         do_send(q, buf, nread);
     }
-    fprintf(stderr, "peer %ld, read %d lines.\n", q->arg, i);
     return i;
 }
 
@@ -288,16 +273,7 @@ static IINT8 input_segment(NMQ *q, segment *s) {
         return NMQ_ERR_CONV_DIFF;
     }
 
-//    fprintf(stderr, "peer %ld: input segment ,seg: %p, receive sn: %u,  s->una: %u, rmt_wnd: %u, nsnd_buf: %u\n",  (
-//            long) q->arg, s, s->sn, s->una);
-//
-    fprintf(stderr,
-            "peer %ld, input segment, s->sn: %u, cmd: %d, frag: %d, wnd: %u, sendts: %u, len: %u, s->una: %u, rmt_wnd: %u, snd_nxt: %u, nsnd_buf: %u, nsnd_que: %u\n",
-            q->arg, s->sn, s->cmd, s->frag, s->wnd, s->sendts, s->len, s->una, q->rmt_wnd, q->snd_nxt,
-            (q->snd_nxt - q->snd_una), q->nsnd_que);
-
     if ((s->sn < q->rcv_nxt) || (s->sn >= (q->rcv_nxt + q->MAX_RCV_BUF_NUM))) {  // out of range
-        fprintf(stderr, "%s, s->sn: %u, s->una: %u ,q->rcv_nxt: %u\n", __FUNCTION__, s->sn, s->una, q->rcv_nxt);
         q->ack_failures++;
         return NMQ_ERR_INVALID_SN;
     }
@@ -305,7 +281,7 @@ static IINT8 input_segment(NMQ *q, segment *s) {
     if (q->rcv_sn_to_node[modsn(s->sn, q->MAX_RCV_BUF_NUM)]) {
         // important! ack seg may get lost.
         // if we receive this seg again, we believe ack seg is lost.
-        // we set ack again to resend ack during next flush once ack is lost.
+        // we set ack to resend ack during next flush once ack is lost.
         // in case peer sends all data (not closed), and server received them all. but server acks for last sn are lost.
         // if not set_ack_ts here, server will not respond to client.
         // this prevent that situation from happening.
@@ -327,13 +303,7 @@ static IINT8 input_segment(NMQ *q, segment *s) {
         }
     }
 
-    fprintf(stderr,
-            "peer: %ld, input seg: %p, wnd: %u, cwnd: %u, sn: %u, len: %u, sendts: %u nsnd_nxt: %d, snd_una: %d nsnd_que: %d, current: %u\n",
-            (long) q->arg, s, s->wnd, q->fc.cwnd, s->sn, s->len, s->sendts, q->snd_nxt, q->snd_una, q->nsnd_que,
-            (q->current) % 10000);
-
     set_ack_ts(q, s->sn, s->sendts);
-//    set_ack_ts(q, s->sn, q->current); bug. here!!!
 
     dlist_add_after(prev, &s->head);
     q->nrcv_buf++;
@@ -379,9 +349,6 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 
     while (size && p) {
         if (size < SEG_HEAD_SIZE) {
-            fprintf(stderr,
-                    "peer: %lu, nmq_input, nsnd_que: %u, snd_nxt: %u, snd_una: %u, nrcv_que: %u, nrcv_buf: %u, buf_size: %d, size: %d\n",
-                    (long) q->arg, q->nsnd_que, q->snd_nxt, q->snd_una, q->nrcv_que, q->nrcv_buf, buf_size, size);
             return NMQ_ERR_MSG_BROKEN;
         }
 
@@ -396,7 +363,6 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 
         if (CMD_DATA != cmd && CMD_ACK != cmd && CMD_WND_REQ != cmd
             && CMD_WND_ANS != cmd && CMD_FIN != cmd) {// drop this pkt if could not understand cmd
-            fprintf(stderr, "wrong cmd: %d\n", cmd);
             return NMQ_ERR_WRONG_CMD;
         }
 
@@ -421,7 +387,6 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 
         if (CMD_DATA == cmd || CMD_FIN == cmd) {
             if (CMD_FIN == cmd) {
-                fprintf(stderr, "peer eof. sn: %u\n", sn);
                 q->peer_fin_sn = sn;
             }
             segment *s = nmq_new_segment(len);
@@ -436,12 +401,10 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 
             if (s->len) {
                 memcpy(s->data, p, s->len);
-//                p += s->len;
             }
             IINT8 ret = input_segment(q, s);
             if (ret != 0) {
                 nmq_delete_segment(s);
-                fprintf(stderr, "nmq_input wrong: %d\n", ret);
 //                return ret;  should not return. may appear duplicate segs. and they are valid pkt
             }
         } else if (CMD_ACK == cmd) {
@@ -449,14 +412,9 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
             process_una(q, una);    //  s->sendts will be zero if processed before input_acks
 //            sndq2buf(q);
         } else if (CMD_WND_REQ == cmd) {
-            fprintf(stderr, "cmd_wnd_req, wnd: %u, una: %u, rmt_wnd: %u, snd_nxt: %u, nsnd_buf: %u, nsnd_que: %u\n",
-                    wnd, una, q->rmt_wnd, q->snd_nxt, (q->snd_nxt - q->snd_una), q->nsnd_que);
             window_probe_ans2peer(q);
         } else if (CMD_WND_ANS == cmd) {
-            fprintf(stderr, "cmd_wnd_ans, wnd: %u, una: %u, rmt_wnd: %u, snd_nxt: %u, nsnd_buf: %u, nsnd_que: %u\n",
-                    wnd, una, q->rmt_wnd, q->snd_nxt, (q->snd_nxt - q->snd_una), q->nsnd_que);
         } else {
-            fprintf(stderr, "unreachable branch!\n");
             assert(0);
         }
         if (len) {
@@ -465,33 +423,16 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
     }
 
     rcvbuf2q(q);
-//    if (rcvbuf2q(q)) {
-//        flush_rcv_q(q);
-//    }
 
     fill_snd_buf(q);
     return tot;
 }
-
-//void flush_rcv_q(NMQ *q) {
-//    if (q->recv_cb && list_not_empty(&q->rcv_que)) {
-//        char buf[q->NMQ_MSS] = {0};
-//        int nrcv = 0;
-//        do {
-//            nrcv = do_recv(q, buf, q->NMQ_MSS);
-//            if (nrcv > 0 || nrcv != NMQ_ERR_NO_DATA) {  // dont report err if empty
-//                q->recv_cb(q, buf, nrcv);
-//            }
-//        } while (nrcv > 0 && list_not_empty(&q->rcv_que));
-//    }
-//}
 
 IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
     // todo: how large should buf_size be for datgram pkt?
     // https://stackoverflow.com/questions/2862071/how-large-should-my-recv-buffer-be-when-calling-recv-in-the-socket-library
     IINT32 rcvq_size = next_packet_size(&q->rcv_que);
     if (rcvq_size > buf_size) { // simply drop packet if no enough buf
-        fprintf(stderr, "buf too small. size: %d. require: %d\n", buf_size, rcvq_size);
         return NMQ_ERR_MSG_SIZE;
     }
 
@@ -523,7 +464,6 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
 
 IINT32 do_send(NMQ *q, const char *data, const int len) {
     if (is_self_closed(q)) {
-        fprintf(stderr, "send already shutdown.\n");
         return NMQ_ERR_SEND_ON_SHUTDOWNED;
     }
 
@@ -574,7 +514,6 @@ IINT32 nmq_send(NMQ *q, const char *data, const int len) {
     }
 
     if (q->read_cb) {
-        fprintf(stderr, "input ways collide. read_cb is set.\n");
         return NMQ_ERR_WRONG_INPUT;
     }
 
@@ -584,7 +523,6 @@ IINT32 nmq_send(NMQ *q, const char *data, const int len) {
 // caution. must pay attention to fields that are assigned. they should be equal to nmq_send
 void append_fin(NMQ *q) {
     fin_ops(q, CMD_FIN);
-    fprintf(stderr, "append fin.\n");
 }
 
 void fin_ops(NMQ *q, char cmd) {
@@ -633,8 +571,6 @@ static IINT32 rcvbuf2q(NMQ *q) {
             q->rcv_nxt++;
             dlist_remove_node(node);
             dlist_add_tail(&q->rcv_que, node);
-//            fprintf(stderr, "peer: %ld, rcvbuf2q, seg: %p, sn: %u, rcv_nxt: %u\n", (long) q->arg, s, s->sn, q->rcv_nxt);
-//            set_ack_ts(q, s->sn, 0); it's called in input_segment
             tot += seg->len;
         } else {
             break;
@@ -662,11 +598,6 @@ static IINT32 sndq2buf(NMQ *q) {
         dlist_add_tail(&q->snd_buf, node);
         q->snd_sn_to_node[modsn(s->sn, q->MAX_SND_BUF_NUM)] = node;
         q->nsnd_que--;
-//        fprintf(stderr,
-//                "peer: %lu, sndq2buf, sn: %u, snd_una: %u, snd_nxt: %u, rcv_nxt: %u, nrcv_buf: %u, nsnd_que: %u, cwnd: %u, snd_wnd: %u\n",
-//                (long) q->arg, s->sn, q->snd_una, q->snd_nxt, q->rcv_nxt, q->nrcv_buf, q->nsnd_que, q->fc.cwnd,
-//                get_snd_cwnd(q));
-//        q->nsnd_buf++;
         tot++;
     }
     return tot;
@@ -677,7 +608,6 @@ static IINT32 sndq2buf(NMQ *q) {
 static void acks2peer(NMQ *q) {
     if (!q->ackcount) {
         if (q->ack_failures) {
-            fprintf(stderr, "ackcount is zero. build window probe answer!!!\n");
             window_probe_ans2peer(q);   // build a window probe answer
         }
         q->ack_failures = 0;
@@ -687,14 +617,10 @@ static void acks2peer(NMQ *q) {
     const int UNIT = 2 * sizeof(IUINT32);
     const IUINT32 max_nack = q->NMQ_MSS / UNIT;
     const IUINT32 tot = UNIT * max_nack;
-    fprintf(stderr, "peer: %lu, rcv_nxt: %u, una: %u, snd_nxt: %u, acks2peer, ackcount: %d, current: %u\n", (
-            long) q->arg, q->rcv_nxt, q->snd_una, q->snd_nxt, q->ackcount, (q->current) % 10000);
     for (int i = 0; i < q->ackcount; i++) {
         IUINT32 sn;
         decode_uint32(&sn, (const char *) (i * 2 + q->acklist));
-        fprintf(stderr, "sn: %u, ", sn);
     }
-    fprintf(stderr, "\n");
 
     segment *s = nmq_new_segment(tot);    // allocate maximum size todo: declare on stack
 
@@ -735,9 +661,7 @@ static void acks2peer(NMQ *q) {
 // this op will remove acked segs
 static void process_ack(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
     IUINT32 sn_mod = modsn(sn, q->MAX_SND_BUF_NUM);
-//    if (!sn || sn < q->snd_una || sn >= q->snd_nxt || !q->snd_sn_to_node[sn_mod]) { // sn 0 is invalid
     if (sn < q->snd_una || sn >= q->snd_nxt || !q->snd_sn_to_node[sn_mod]) { // sn 0 is valid!!!
-        fprintf(stderr, "peer: %ld, invalid ack sn: %u, ts_send: %u\n", (long) q->arg, sn, ts_send);
         return;
     }
     if (ts_send) {  //  during processing una. just delete segments and do nothing
@@ -750,7 +674,6 @@ static void process_ack(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
     q->snd_sn_to_node[sn_mod] = NULL;
     segment *s = ADDRESS_FOR(segment, head, node);
     nmq_delete_segment(s);
-//    q->nsnd_buf--;
 }
 
 static void count_repeat_acks(NMQ *q, IUINT32 maxack) {
@@ -771,7 +694,6 @@ static void input_acks(NMQ *q, const char *p, IUINT32 len, const IUINT32 old_una
     const int UNIT = 2 * sizeof(IUINT32);
     IUINT32 nacks = len / UNIT;
 
-    fprintf(stderr, "%s, len: %d, ", __FUNCTION__, len);
     while (len >= UNIT) {
         len -= UNIT;
         IUINT32 ack_sn, ack_ts_send;
@@ -779,12 +701,9 @@ static void input_acks(NMQ *q, const char *p, IUINT32 len, const IUINT32 old_una
         p = decode_uint32(&ack_ts_send, p);
         maxack = (IUINT32) MAX(maxack, ack_sn);
         process_ack(q, ack_sn, ack_ts_send);    // will delete segments
-        fprintf(stderr, "sn: %u, ", ack_sn);
     }
-    fprintf(stderr, "\n");
-    // todo: multiple segments send(or receive?) at same time will not regard as dup acks.
-    // todo: cause this cause retransmit very soon.
 
+    // todo: multiple segments send(or receive?) at same time will not regard as dup acks.this cause retransmit very soon.
     count_repeat_acks(q, maxack);
 
     update_una(q);
@@ -808,13 +727,8 @@ static void set_ack_ts(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
     char *p1 = (char *) (q->acklist + q->ackcount * 2);
     char *p2 = (char *) (q->acklist + q->ackcount * 2 + 1);
 
-//    if (is_little_endian()) {
     encode_uint32(sn, p1);
     encode_uint32(ts_send, p2);
-//    } else {
-//        big_endian_to_little(sn, p1);
-//        big_endian_to_little(ts_send, p2);
-//    }
 
     q->ackcount++;
 }
@@ -823,8 +737,6 @@ static void set_ack_ts(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
 
 // una {
 static void process_una(NMQ *q, IUINT32 una) {
-//    fprintf(stderr, "peer: %ld, receive una: %u\n", (
-//    long)q->arg, una);
     dlnode *node, *nxt;
     FOR_EACH(node, nxt, &q->snd_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
@@ -840,15 +752,11 @@ static void process_una(NMQ *q, IUINT32 una) {
 
 static inline void update_una(NMQ *q) {
     // update una
-//    fprintf(stderr, "peer: %ld, before update_una, nsnd_que: %u, snd_nxt: %u, snd_una: %u, nrcv_buf: %u, nrcv_que: %u\n", (long) q->arg,  q->nsnd_que, q->snd_nxt, q->snd_una, q->nrcv_buf, q->nrcv_que);
-
     if (list_not_empty(&q->snd_buf)) {
         q->snd_una = ADDRESS_FOR(segment, head, q->snd_buf.next)->sn;
     } else {
         q->snd_una = q->snd_nxt;
     }
-//    fprintf(stderr, "peer: %ld, after update_una, nsnd_uque: %u, snd_nxt: %u, snd_una: %u, nrcv_buf: %u, nrcv_que: %u\n", (long) q->arg, q->nsnd_que, q->snd_nxt, q->snd_una, q->nrcv_buf, q->nrcv_que);
-
 }
 // } una
 
@@ -866,7 +774,6 @@ static inline void window_probe_ans2peer(NMQ *q) {
 
 static inline void window_probe_build_req_if_need(NMQ *q) {
     if (!q->rmt_wnd && !q->probe_pending) {
-        fprintf(stderr, "rmt_wnd: %u, probe_pending: %d\n", q->rmt_wnd, q->probe_pending);
         q->probe_pending = 1;
         q->ts_probe_wait = q->current + NMQ_PROBE_WAIT_MS_DEF;
     }
@@ -897,7 +804,7 @@ void fc_init(NMQ *q, fc_s *fc) {
     fc->TROUBLE_TOLERANCE = NMQ_TROUBLE_TOLERANCE_DEF;
     fc->DUP_ACK_LIM = NMQ_DUP_ACK_LIM_DEF;
     fc->MSS = q->NMQ_MSS;
-    fc->ssth_alpha = 0.5;   // todo
+    fc->ssth_alpha = NMQ_FC_ALPHA;
     fc->cwnd = NMQ_CWND_INIT;
     fc->incr = fc->cwnd * fc->MSS;
     fc->ssthresh = NMQ_SSTHRESH_DEF;
@@ -907,27 +814,19 @@ void fc_init(NMQ *q, fc_s *fc) {
 
 void fc_pkt_loss(fc_s *fc, IUINT32 max_lost_sn, IUINT32 n_loss, IUINT32 n_timeout) {
     if (!fc->in_trouble && (n_loss + n_timeout) >= fc->TROUBLE_TOLERANCE) {
-        fprintf(stderr, "%s, before, n_loss: %u, n_timeout: %u, max_lost_sn: %u, ssthresh: %u, cwnd: %u\n",
-                __FUNCTION__, n_loss, n_timeout, max_lost_sn, fc->ssthresh, fc->cwnd);
         fc->in_trouble = 1;
         fc->max_lost_sn = max_lost_sn;
-        fc->ssthresh = MAX(NMQ_SSTHRESH_MIN, fc->cwnd * fc->ssth_alpha);   // todo, change 0.5 for test
-        fc->cwnd = fc->ssthresh;  //todo: test
+        fc->ssthresh = MAX(NMQ_SSTHRESH_MIN, fc->cwnd * fc->ssth_alpha);
+        fc->cwnd = fc->ssthresh;  //todo: test the ratio. e.g. change to 0.5
 //        fc->cwnd  = fc->cwnd * 3 / 4;
         if (n_loss) {
             fc->cwnd += fc->DUP_ACK_LIM;
         }
         fc->incr = fc->cwnd * fc->MSS;
-        fprintf(stderr, "%s, after, n_loss: %u, n_timeout: %u, max_lost_sn: %u, ssthresh: %u, cwnd: %u\n", __FUNCTION__,
-                n_loss, n_timeout, max_lost_sn, fc->ssthresh, fc->cwnd);
-
     }
 }
 
 void fc_input_acks(fc_s *fc, const IUINT32 una, IUINT32 nacks) {
-    fprintf(stderr, "%s, before, f->cwnd: %u, nacks: %u, ssthreash: %u, una: %u, max_lost_sn: %u\n", __FUNCTION__,
-            fc->cwnd, nacks, fc->ssthresh, una, fc->max_lost_sn);
-
     if (fc->in_trouble) {
         if (una > fc->max_lost_sn) {    // new data arrives
             fc->cwnd = fc->ssthresh + 1;
@@ -941,13 +840,9 @@ void fc_input_acks(fc_s *fc, const IUINT32 una, IUINT32 nacks) {
         fc_normal_acks(fc, nacks);
     }
 
-    fprintf(stderr, "%s, after, f->cwnd: %u, nacks: %u, ssthreash: %u, una: %u, max_lost_sn: %u\n", __FUNCTION__,
-            fc->cwnd, nacks, fc->ssthresh, una, fc->max_lost_sn);
 }
 
 void fc_normal_acks(fc_s *fc, IUINT32 nacks) {
-    fprintf(stderr, "%s, before, f->cwnd: %u, nacks: %u, ssthreash: %u, nacks: %u\n", __FUNCTION__, fc->cwnd, nacks,
-            fc->ssthresh, nacks);
     if (fc->cwnd <= fc->ssthresh) {  // slow start
         fc->cwnd = MIN(fc->cwnd + nacks, fc->ssthresh + 1);
         fc->incr = fc->cwnd * fc->MSS;
@@ -957,13 +852,11 @@ void fc_normal_acks(fc_s *fc, IUINT32 nacks) {
             fc->cwnd += 1;
         }
     }
-    fprintf(stderr, "%s, after, f->cwnd: %u, nacks: %u, ssthreash: %u\n", __FUNCTION__, fc->cwnd, nacks, fc->ssthresh);
 }
 // } fc
 
 // rtt & rto {
 static inline void update_rtt(NMQ *q, IUINT32 sn, IUINT32 sendts) {
-//    segment *s = ADDRESS_FOR(segment, head, q->snd_sn_to_node[sn]); bug!!
     segment *s = ADDRESS_FOR(segment, head, q->snd_sn_to_node[modsn(sn, q->MAX_SND_BUF_NUM)]);
     if (s->sendts == sendts) {
         IUINT32 rtt = q->current - sendts;
@@ -1018,8 +911,6 @@ static inline void update_rto(NMQ *q) {
     rto_helper_s *rter = &q->rto_helper;
     IUINT32 rto1 = q->rto;
     q->rto = MAX(NMQ_RTO_MIN, MIN(NMQ_RTO_MAX, (rter->srtt >> 3) + rter->rttvar));
-    fprintf(stderr, "peer %ld, update rto, first old rto: %u, new rto: %u, rter->srrt >> 3: %u, rter->rttvar: %u\n",
-            (long) q->arg, rto1, q->rto, rter->srtt >> 3, rter->rttvar);
 }
 // } rtt & rto
 
@@ -1122,12 +1013,10 @@ void nmq_set_fc_on(NMQ *q, IUINT8 on) {
 
 
 void nmq_shutdown_send(NMQ *q) {
-    fprintf(stderr, "%s\n", __FUNCTION__);
     if (!q->fin_sn) {
         q->fin_sn = 1;
         append_fin(q);
     } else {
-        fprintf(stderr, "already shutdown!!\n");
     }
 }
 
@@ -1144,12 +1033,9 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
     q->arg = arg;
     q->inited = 0;
     q->flush_interval = NMQ_FLUSH_INTERVAL_DEF;
-    q->type = NMQ_TYPE_DGRAM;
 
     q->MAX_SND_BUF_NUM = NMQ_SND_BUF_NUM_DEF;   // must be initialized before rcv_sn_to_node
     q->MAX_RCV_BUF_NUM = NMQ_RCV_BUF_NUM_DEF;
-//    q->MAX_SND_QUE_NUM = NMQ_QUE_NUM_DEF;
-//    q->MAX_RCV_QUE_NUM = NMQ_QUE_NUM_DEF;
     q->NMQ_MSS = NMQ_MSS_DEF;
 
     q->rmt_wnd = NMQ_RMT_WND_DEF;
@@ -1211,24 +1097,13 @@ static inline void allocate_mem(NMQ *q) {
 // either send_done or recv_done exists, it means self or peer closed.
 void check_send_done(NMQ *q) {
     if (is_self_closed(q) && !list_not_empty(&q->snd_que) && (!list_not_empty(&q->snd_buf))) {
-        fprintf(stderr, "send completed\n");
         nmq_output(q, NULL, NMQ_SEND_EOF);
     }
 }
 
-//void check_done(NMQ *q) {
-//    // if true, it means peer is closed.
-//    // since we already finished our task, we no longer need to send to peer or recv from peer.
-//    // if peer want us send data it, it should never close itself.
-//    if (check_send_done(q) || is_recv_done(q)) {
-//        nmq_output(q, NULL, NMQ_EOF);
-//    }
-//}
-
 int is_recv_done(NMQ *q) {
     if (q->peer_fin_sn > 0) {
         if ((q->rcv_nxt > q->peer_fin_sn) && (!list_not_empty(&q->rcv_buf)) && (!list_not_empty(&q->rcv_que))) {
-            fprintf(stderr, "recv completed\n");
             return 1;
         }
     }
@@ -1243,15 +1118,12 @@ void nmq_destroy(NMQ *q) {
     nmq_free(q->snd_sn_to_node);
     nmq_free(q->rcv_sn_to_node);;
     nmq_free(q->acklist);
-    fprintf(stderr,
-            "%s, snd_una: %u, rcv_nxt: %u, snd_nxt: %u, avg rtt: %lf. bytes_send: %d, bytes_output_tot: %d, ratio: %lf\n",
-            __FUNCTION__, q->snd_una, q->rcv_nxt,
-            q->snd_nxt, q->stat.nrtt != 0 ? (q->stat.nrtt_tot * 1.0) / (q->stat.nrtt) : -1, q->stat.bytes_send,
-            q->stat.bytes_send_tot, q->stat.bytes_send == 0 ? -1.0 : (q->stat.bytes_send_tot * 1.0 / q->stat.bytes_send));
+    q->snd_nxt, q->stat.nrtt != 0 ? (q->stat.nrtt_tot * 1.0) / (q->stat.nrtt) : -1, q->stat.bytes_send,
+            q->stat.bytes_send_tot, q->stat.bytes_send == 0 ? -1.0 : (q->stat.bytes_send_tot * 1.0 /
+                                                                      q->stat.bytes_send));
     dlist *lists[] = {&q->snd_buf, &q->snd_que, &q->rcv_buf, &q->rcv_que, NULL};
     for (int i = 0; lists[i]; i++) {
         dlnode *node, *nxt;
-        fprintf(stderr, "delete list %p\n", lists[i]);
         FOR_EACH(node, nxt, lists[i]) {
             segment *s = ADDRESS_FOR(segment, head, node);
             dlist_remove_node(node);
@@ -1271,18 +1143,11 @@ segment *nmq_new_segment(IUINT32 data_size) {
         s->data = (char *) nmq_malloc(data_size); // must after memset
         memset(s->data, 0, data_size);
     }
-
-//    fprintf(stderr, "new segment: %p\n", s);
     return s;
 }
 
 void nmq_delete_segment(segment *seg) {
-//static inline void delete_segment(segment *seg) {
     if (seg) {
-//        if (seg->sn == 0) {
-//            fprintf(stderr, "delete sn = 0\n");
-//        }
-//        fprintf(stderr, "deleting segment: %p, sn: %u\n", seg, seg->sn);
         nmq_free(seg->data);
         nmq_free(seg);
     }
@@ -1291,8 +1156,6 @@ void nmq_delete_segment(segment *seg) {
 static inline void *nmq_malloc(size_t size) {
     void *p = gs_malloc_fn(size);
     if (NULL == p) {
-        //todo
-        fprintf(stderr, "no enough memeory. abort!");
         abort();
         return NULL;
     }
@@ -1394,14 +1257,6 @@ void nmq_set_max_attempt(NMQ *q, IUINT32 max_try, nmq_failure_cb cb) {
         q->failure_cb = cb;
     }
 }
-
-//void nmq_set_max_que_len(NMQ *q, IUINT32 que_len) {
-//    if (!q->inited) {
-//        q->MAX_SND_QUE_NUM = que_len;
-//        q->MAX_RCV_QUE_NUM = que_len;
-//    }
-//}
-
 
 void nmq_set_interval(NMQ *q, IUINT32 interval) {
     if (!q->inited) {
