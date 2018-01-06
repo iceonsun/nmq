@@ -12,10 +12,10 @@
 #include <sys/errno.h>
 #include <fcntl.h>
 
-#include "enc.h"
+#include "../enc.h"
 #include "test.h"
-#include "dlist.h"
-#include "nmq.h"
+#include "../dlist.h"
+#include "../nmq.h"
 
 #define MAX_SN 5000
 // 模拟网络

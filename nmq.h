@@ -74,18 +74,24 @@ extern "C" {
 #define NMQ_TYPE_DGRAM 0
 #define NMQ_TYPE_STREAM 1
 
+#ifndef OFFSETOF
 #define OFFSETOF(TYPE, MEMBER) \
     ((size_t)&(((TYPE *)0)->MEMBER))
+#endif
 
+#ifndef ADDRESS_FOR
 #define ADDRESS_FOR(TYPE, MEMBER, mem_addr) \
     ((TYPE*)(((char *)(mem_addr)) - OFFSETOF(TYPE, MEMBER)))
+#endif
 
+#ifndef WDBLOCK
 #ifdef EWOULDBLOCK
 #define WDBLOCK(ERR) \
     ((ERR) == EAGAIN || (ERR) == EWOULDBLOCK)
 #else
 #define WDBLOCK(ERR) \
     ((ERR) == EAGAIN)
+#endif
 #endif
 
 typedef struct segment_s {

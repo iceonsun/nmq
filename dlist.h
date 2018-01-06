@@ -5,7 +5,7 @@
 #ifndef SOCKNM_DLIST_H
 #define SOCKNM_DLIST_H
 
-#include "types.h"
+#include "ktype.h"
 
 #ifdef __cplusplus
 extern "C" {
