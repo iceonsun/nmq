@@ -273,6 +273,8 @@ void nmq_set_max_attempt(NMQ *q, IUINT32 max_try, nmq_failure_cb cb);
 
 void nmq_set_interval(NMQ *q, IUINT32 interval);
 
+void nmq_set_fc_ratio(NMQ *q, float ratio);
+
 #ifdef __cplusplus
 }
 #endif

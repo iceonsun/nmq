@@ -235,8 +235,6 @@ int fill_snd_buf(NMQ *q) {
         return 0;
     }
 
-//    assert(q->read_cb != NULL);
-
     IUINT32 cwnd = get_snd_cwnd(q);
     IINT32 nNeed = cwnd - (q->snd_nxt - q->snd_una + q->nsnd_que);
     if (nNeed <= 0) {  // no need to
@@ -245,7 +243,6 @@ int fill_snd_buf(NMQ *q) {
     char buf[q->NMQ_MSS];
     IINT32 nread = 0;
     IINT32 i = 0;
-//    for (; i < nNeed; i++) {
     for (; i < q->MAX_SND_BUF_NUM; i++) {   // read q.MAX_SND_BUF_NUM other than nNeed;
         int err = 0;
         nread = q->read_cb(q, buf, q->NMQ_MSS, &err);
@@ -1267,5 +1264,10 @@ void nmq_set_interval(NMQ *q, IUINT32 interval) {
         } else {
             q->flush_interval = interval;
         }
+    }
+}
+void nmq_set_fc_ratio(NMQ *q, float ratio) {
+    if (!q->inited && ratio > 0f && ratio < 1f) {
+        q->fc.ssth_alpha = ratio;
     }
 }
