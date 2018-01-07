@@ -22,7 +22,6 @@ extern "C" {
 #define NMQ_BUF_SIZE 1600
 #define NMQ_SND_BUF_NUM_DEF 150
 #define NMQ_RCV_BUF_NUM_DEF 500
-#define NMQ_QUE_NUM_DEF 100
 
 #define NMQ_STATE_SEND_FAILURE (-1)
 

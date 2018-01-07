@@ -1115,9 +1115,6 @@ void nmq_destroy(NMQ *q) {
     nmq_free(q->snd_sn_to_node);
     nmq_free(q->rcv_sn_to_node);;
     nmq_free(q->acklist);
-    q->snd_nxt, q->stat.nrtt != 0 ? (q->stat.nrtt_tot * 1.0) / (q->stat.nrtt) : -1, q->stat.bytes_send,
-            q->stat.bytes_send_tot, q->stat.bytes_send == 0 ? -1.0 : (q->stat.bytes_send_tot * 1.0 /
-                                                                      q->stat.bytes_send));
     dlist *lists[] = {&q->snd_buf, &q->snd_que, &q->rcv_buf, &q->rcv_que, NULL};
     for (int i = 0; lists[i]; i++) {
         dlnode *node, *nxt;
@@ -1267,7 +1264,7 @@ void nmq_set_interval(NMQ *q, IUINT32 interval) {
     }
 }
 void nmq_set_fc_ratio(NMQ *q, float ratio) {
-    if (!q->inited && ratio > 0f && ratio < 1f) {
+    if (!q->inited && ratio > 0.0f && ratio < 1.0f) {
         q->fc.ssth_alpha = ratio;
     }
 }
