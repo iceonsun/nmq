@@ -111,7 +111,7 @@ typedef struct segment_s {
     IUINT32 una;
     IUINT32 sendts;     // to estimate rtt
     IUINT32 len;
-    char *data;
+    char data[1];   // don't use pointer
 } segment;
 
 
@@ -252,7 +252,6 @@ void nmq_set_fc_on(NMQ *q, IUINT8 on);
 //void nmq_set_recv_cb(NMQ *q, nmq_recv_cb cb);
 void nmq_set_read_cb(NMQ *q, nmq_read_cb cb);
 
-segment *nmq_new_segment(IUINT32 data_size);
 
 void nmq_delete_segment(segment *seg);
 
