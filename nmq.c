@@ -118,6 +118,9 @@ static inline void *nmq_free(void *addr);
 
 static inline void allocate_mem(NMQ *q);
 
+static inline segment *nmq_new_segment(IUINT32 data_size);
+
+
 static inline int is_recv_done(NMQ *q);
 
 static inline void check_send_done(NMQ *q);
@@ -434,7 +437,7 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
     }
 
     char *p = buf;
-    dlnode *node, *nxt;
+    dlnode *node = 0, *nxt = 0;
     FOR_EACH(node, nxt, &q->rcv_que) {
         segment *s = ADDRESS_FOR(segment, head, node);
         if (s->len) {
@@ -529,7 +532,7 @@ void fin_ops(NMQ *q, char cmd) {
     s->n_sent = 0;
     s->frag = 0;
     s->len = 0;
-    s->data = 0;    // una is assigned in flush_snd_buf
+    s->data[0] = 0;    // una is assigned in flush_snd_buf
     dlist_add_tail(&q->snd_que, &s->head);
     q->nsnd_que++;
 }
@@ -557,7 +560,7 @@ IINT32 nmq_recv(NMQ *q, char *buf, const int buf_size) {
 // nmq private functions
 static IINT32 rcvbuf2q(NMQ *q) {
     IINT32 tot = 0;
-    dlnode *node, *nxt;
+    dlnode *node = 0, *nxt = 0;
     FOR_EACH(node, nxt, &q->rcv_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
         if (s->sn == q->rcv_nxt) {
@@ -583,7 +586,7 @@ static IINT32 sndq2buf(NMQ *q) {
     IUINT32 cwnd = get_snd_cwnd(q);
 
     // flow control. num(pending segments in snd_buf) <= cwnd
-    dlnode *node, *nxt;
+    dlnode *node = 0, *nxt = 0;
 
     FOR_EACH(node, nxt, &q->snd_que) {
         if (q->snd_nxt >= (q->snd_una + cwnd)) {    // cannot send new data
@@ -614,7 +617,8 @@ static void acks2peer(NMQ *q) {
     const int UNIT = 2 * sizeof(IUINT32);
     const IUINT32 max_nack = q->NMQ_MSS / UNIT;
     const IUINT32 tot = UNIT * max_nack;
-    for (int i = 0; i < q->ackcount; i++) {
+    const IUINT32 ACKCNT = q->ackcount;
+    for (int i = 0; i < ACKCNT; i++) {
         IUINT32 sn;
         decode_uint32(&sn, (const char *) (i * 2 + q->acklist));
     }
@@ -633,7 +637,7 @@ static void acks2peer(NMQ *q) {
     char *p = (char *) q->acklist;
     char buf[NMQ_BUF_SIZE] = {0};
 
-    IUINT32 ackcnt = q->ackcount;
+    IUINT32 ackcnt = ACKCNT;
     while (ackcnt > 0) {
         if (ackcnt > max_nack) {
             s->len = max_nack * UNIT;
@@ -674,7 +678,7 @@ static void process_ack(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
 }
 
 static void count_repeat_acks(NMQ *q, IUINT32 maxack) {
-    dlnode *node, *nxt;
+    dlnode *node = 0, *nxt = 0;
     FOR_EACH(node, nxt, &q->snd_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
         if (s->sn < maxack) {
@@ -734,7 +738,7 @@ static void set_ack_ts(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
 
 // una {
 static void process_una(NMQ *q, IUINT32 una) {
-    dlnode *node, *nxt;
+    dlnode *node = 0, *nxt = 0;
     FOR_EACH(node, nxt, &q->snd_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
         if (s->sn < una) {
@@ -949,7 +953,7 @@ void init_stat(nmq_stat_t *stat) {
 
 // return size of next packet in send_queue.
 static IUINT32 next_packet_size(dlist *list) {
-    dlnode *it, *nxt;
+    dlnode *it = 0, *nxt = 0;
     IUINT32 len = 0;
     FOR_EACH(it, nxt, list) {
         segment *s = ADDRESS_FOR(segment, head, it);
@@ -1117,7 +1121,7 @@ void nmq_destroy(NMQ *q) {
     nmq_free(q->acklist);
     dlist *lists[] = {&q->snd_buf, &q->snd_que, &q->rcv_buf, &q->rcv_que, NULL};
     for (int i = 0; lists[i]; i++) {
-        dlnode *node, *nxt;
+        dlnode *node = 0, *nxt = 0;
         FOR_EACH(node, nxt, lists[i]) {
             segment *s = ADDRESS_FOR(segment, head, node);
             dlist_remove_node(node);
@@ -1127,22 +1131,16 @@ void nmq_destroy(NMQ *q) {
     nmq_free(q);
 }
 
-//static inline segment *nmq_new_segment(IUINT32 data_size) {
-segment *nmq_new_segment(IUINT32 data_size) {
-    segment *s = (segment *) nmq_malloc(sizeof(segment));
-    memset(s, 0, sizeof(segment));  // the order must no be wrong.
+static inline segment *nmq_new_segment(IUINT32 data_size) {
+    segment *s = (segment *) nmq_malloc(sizeof(segment) + data_size);
+    memset(s, 0, sizeof(segment) + data_size);  // the order must no be wrong.
 
     dlist_init(&s->head);
-    if (data_size) {
-        s->data = (char *) nmq_malloc(data_size); // must after memset
-        memset(s->data, 0, data_size);
-    }
     return s;
 }
 
 void nmq_delete_segment(segment *seg) {
     if (seg) {
-        nmq_free(seg->data);
         nmq_free(seg);
     }
 }
