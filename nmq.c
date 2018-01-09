@@ -12,8 +12,6 @@
 #include "enc.h"
 #include "nmq.h"
 
-#define ACK_TOLERANCE_DEF 2
-#define TIMEOUT_TOLERANCE_DEF 2
 #define INTERVAL_MAX_MS 10000
 #define INTERVAL_MIN_MS 10
 
@@ -44,8 +42,6 @@ static void flush(NMQ *q);
 
 static void send_failed(NMQ *q, IUINT32 sn);
 
-
-static int fill_snd_buf(NMQ *q);
 
 // acks
 static void set_ack_ts(NMQ *q, IUINT32 sn, IUINT32 ts_send);
@@ -209,7 +205,6 @@ static void flush_snd_buf(NMQ *q) {
 
 
 static void flush(NMQ *q) {
-    fill_snd_buf(q);
 
     window_probe_req2peer_if_need(q);
 
@@ -223,41 +218,7 @@ static void flush(NMQ *q) {
 
     window_probe_build_req_if_need(q);
 
-//    check_done(q);
     check_send_done(q);
-//
-//    is_recv_done(q);
-}
-
-int fill_snd_buf(NMQ *q) {
-    if (is_self_closed(q)) {
-        return 0;
-    }
-
-    if (!q->read_cb) {
-        return 0;
-    }
-
-    IUINT32 cwnd = get_snd_cwnd(q);
-    IINT32 nNeed = cwnd - (q->snd_nxt - q->snd_una + q->nsnd_que);
-    if (nNeed <= 0) {  // no need to
-        return 0;
-    }
-    char buf[q->NMQ_MSS];
-    IINT32 nread = 0;
-    IINT32 i = 0;
-    for (; i < q->MAX_SND_BUF_NUM; i++) {   // read q.MAX_SND_BUF_NUM other than nNeed;
-        int err = 0;
-        nread = q->read_cb(q, buf, q->NMQ_MSS, &err);
-        if (nread <= 0) {
-            if (0 == nread || !WDBLOCK(err)) {
-                nmq_shutdown_send(q);
-            }
-            return nread;
-        }
-        do_send(q, buf, nread);
-    }
-    return i;
 }
 
 static void send_failed(NMQ *q, IUINT32 sn) {
@@ -424,7 +385,6 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
 
     rcvbuf2q(q);
 
-    fill_snd_buf(q);
     return tot;
 }
 
@@ -511,10 +471,6 @@ IINT32 nmq_output(NMQ *q, const char *data, const int len) {
 IINT32 nmq_send(NMQ *q, const char *data, const int len) {
     if (!data || len <= 0) {
         return 0;
-    }
-
-    if (q->read_cb) {
-        return NMQ_ERR_WRONG_INPUT;
     }
 
     return do_send(q, data, len);
@@ -805,7 +761,7 @@ void fc_init(NMQ *q, fc_s *fc) {
     fc->TROUBLE_TOLERANCE = NMQ_TROUBLE_TOLERANCE_DEF;
     fc->DUP_ACK_LIM = NMQ_DUP_ACK_LIM_DEF;
     fc->MSS = q->NMQ_MSS;
-    fc->ssth_alpha = NMQ_FC_ALPHA;
+    fc->ssth_alpha = NMQ_FC_ALPHA_DEF;
     fc->cwnd = NMQ_CWND_INIT;
     fc->incr = fc->cwnd * fc->MSS;
     fc->ssthresh = NMQ_SSTHRESH_DEF;
@@ -819,7 +775,6 @@ void fc_pkt_loss(fc_s *fc, IUINT32 max_lost_sn, IUINT32 n_loss, IUINT32 n_timeou
         fc->max_lost_sn = max_lost_sn;
         fc->ssthresh = MAX(NMQ_SSTHRESH_MIN, fc->cwnd * fc->ssth_alpha);
         fc->cwnd = fc->ssthresh;  //todo: test the ratio. e.g. change to 0.5
-//        fc->cwnd  = fc->cwnd * 3 / 4;
         if (n_loss) {
             fc->cwnd += fc->DUP_ACK_LIM;
         }
@@ -970,8 +925,6 @@ static inline void seg_first_sent(NMQ *q, segment *s) {
 //    s->resendts = s->rto + current;
 }
 
-// todo: seg rto and q->rto has no relathionship right now!!!!!
-// timeout should be rto + rtt!!!
 static inline void seg_timeout(NMQ *q, segment *s) {
     if (q->nodelay) {
         s->rto += (q->rto >> 1);
@@ -1005,13 +958,7 @@ void nmq_set_fc_on(NMQ *q, IUINT8 on) {
     }
 }
 
-//void nmq_set_recv_cb(NMQ *q, nmq_recv_cb cb) {
-//    if (!q->flushed) {
-//        q->recv_cb = cb;
-//    }
-//}
 //} nmq utils
-
 
 void nmq_shutdown_send(NMQ *q) {
     if (!q->fin_sn) {
@@ -1019,10 +966,6 @@ void nmq_shutdown_send(NMQ *q) {
         append_fin(q);
     } else {
     }
-}
-
-void nmq_set_read_cb(NMQ *q, nmq_read_cb cb) {
-    q->read_cb = cb;
 }
 
 // memory ops. {
@@ -1075,11 +1018,9 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
 
     q->output_cb = NULL;
     q->failure_cb = NULL;
-//    q->recv_cb = NULL;
 
     q->peer_fin_sn = 0;
     q->fin_sn = 0;
-//    q->send_done_cb = NULL;
 
     return q;
 }
