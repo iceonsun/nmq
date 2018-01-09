@@ -62,7 +62,6 @@ extern "C" {
 #define ERR_DATA_TOO_LONG (-12)
 #define NMQ_ERR_RCV_BUF_NO_MEM (-13)
 #define NMQ_ERR_SEND_ON_SHUTDOWNED (-15)
-#define NMQ_ERR_SND_QUE_NO_MEM (-14)
 #define NMQ_ERR_ACK_BUF_LEN (-20)
 #define NMQ_ERR_WRONG_INPUT (-21)
 // 1500 minus ip, udp  and kcp header size.
@@ -70,10 +69,7 @@ extern "C" {
 #define NMQ_HEAD_SIZE 24
 #define SEG_HEAD_SIZE NMQ_HEAD_SIZE
 
-#define NMQ_TYPE_DGRAM 0
-#define NMQ_TYPE_STREAM 1
-
-#define NMQ_FC_ALPHA 0.5
+#define NMQ_FC_ALPHA_DEF 0.5
 
 #ifndef OFFSETOF
 #define OFFSETOF(TYPE, MEMBER) \
@@ -181,7 +177,6 @@ typedef struct nmq_s {
     IUINT32 ack_failures;
 
     IUINT8 fc_on;
-//    flow_control_s flow_ctrl;
     fc_s fc;
 
     IUINT32 rto;
@@ -202,22 +197,15 @@ typedef struct nmq_s {
     IINT32 (*output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
 
     void (*failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
-//    void (*recv_cb)(struct nmq_s *q, const char *buf, const int nlen);
 
     IUINT32 peer_fin_sn;
     char fin_sn;
-//    void (*send_done_cb)(struct nmq_s *nmq);
 
-    IINT32 (*read_cb)(struct nmq_s *nmq, char *buf, int len, int *err);
 } NMQ;
 
 typedef IINT32 (*nmq_output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
 
 typedef void (*nmq_failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
-
-//typedef void (*nmq_send_done_cb)(struct nmq_s *nmq);
-typedef IINT32 (*nmq_read_cb)(struct nmq_s *nmq, char *buf, int len, int *err);
-//typedef void (*nmq_recv_cb)(NMQ *q, const char *buf, const int nlen);
 
 void nmq_update(NMQ *q, IUINT32 current);
 
@@ -248,9 +236,6 @@ void nmq_set_output_cb(NMQ *q, nmq_output_cb cb);
 void nmq_set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd);
 
 void nmq_set_fc_on(NMQ *q, IUINT8 on);
-
-//void nmq_set_recv_cb(NMQ *q, nmq_recv_cb cb);
-void nmq_set_read_cb(NMQ *q, nmq_read_cb cb);
 
 
 void nmq_delete_segment(segment *seg);
