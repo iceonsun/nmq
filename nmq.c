@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include <errno.h>
 
 #include "dlist.h"
 #include "enc.h"
@@ -91,6 +90,7 @@ static inline IINT32 avaible_rcv_wnd(NMQ *q);
 
 static inline void update_rmt_wnd(NMQ *q, IUINT32 rmt_wnd);
 
+
 // nmq utils
 static inline IINT8 dup_ack_limit(NMQ *q);
 
@@ -106,17 +106,24 @@ static inline void seg_timeout(NMQ *q, segment *s);
 static inline void seg_reach_fastack(NMQ *q, segment *s);
 
 // mem ops {
-//static inline segment *nmq_new_segment(IUINT32 data_size);
-//static inline void delete_segment(segment *seg);
+static inline segment *new_segment(IUINT32 data_size);
+
+static inline void delete_segment(segment *seg);
+
 static inline void *nmq_malloc(size_t size);
 
 static inline void *nmq_free(void *addr);
 
 static inline void allocate_mem(NMQ *q);
 
-static inline segment *nmq_new_segment(IUINT32 data_size);
+// segment pool
+void init_segment_pool(segment_pool *pool, IUINT32 MTU, IUINT8 CAP);
 
+segment *obtain_segment(segment_pool *pool);
 
+void recycle_segment(segment_pool *pool, segment *s);
+
+// progress
 static inline int is_recv_done(NMQ *q);
 
 static inline void check_send_done(NMQ *q);
@@ -350,7 +357,7 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
             if (CMD_FIN == cmd) {
                 q->peer_fin_sn = sn;
             }
-            segment *s = nmq_new_segment(len);
+            segment *s = obtain_segment(&q->pool);
             s->conv = conv;
             s->cmd = cmd;   // no use
             s->sn = sn;
@@ -365,7 +372,7 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
             }
             IINT8 ret = input_segment(q, s);
             if (ret != 0) {
-                nmq_delete_segment(s);
+                recycle_segment(&q->pool, s);
 //                return ret;  should not return. may appear duplicate segs. and they are valid pkt
             }
         } else if (CMD_ACK == cmd) {
@@ -407,7 +414,7 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
         const IINT8 frag = s->frag;
 
         dlist_remove_node(node);
-        nmq_delete_segment(s);
+        recycle_segment(&q->pool, s);
         q->nrcv_que--;
 
         if (0 == frag) { // reach the end of next packet
@@ -438,7 +445,7 @@ IINT32 do_send(NMQ *q, const char *data, const int len) {
 //  for (IUINT8 i = (IUINT8) (tot - 1); i >= 0; i--) {  caution!!! this is wrong because i > 0 is always true if i is IUINT8
     for (IUINT8 i = (IUINT8) tot; i > 0; i--) {     // frag order is n, n - 1 ... 0.
         const IUINT32 slen = (i > 1) ? q->NMQ_MSS : (len - (tot - 1) * q->NMQ_MSS);
-        segment *s = nmq_new_segment(slen);
+        segment *s = obtain_segment(&q->pool);
         s->conv = q->conv;
         s->cmd = CMD_DATA;
         s->n_sent = 0;
@@ -482,7 +489,7 @@ void append_fin(NMQ *q) {
 }
 
 void fin_ops(NMQ *q, char cmd) {
-    segment *s = nmq_new_segment(0);
+    segment *s = obtain_segment(&q->pool);
     s->conv = q->conv;
     s->cmd = cmd;
     s->n_sent = 0;
@@ -579,7 +586,7 @@ static void acks2peer(NMQ *q) {
         decode_uint32(&sn, (const char *) (i * 2 + q->acklist));
     }
 
-    segment *s = nmq_new_segment(tot);    // allocate maximum size todo: declare on stack
+    segment *s = obtain_segment(&q->pool);
 
     s->sn = 0;
     s->conv = q->conv;
@@ -609,7 +616,7 @@ static void acks2peer(NMQ *q) {
         nmq_output(q, buf, ptr - buf);
     }
 
-    nmq_delete_segment(s);
+    recycle_segment(&q->pool, s);
     q->ackcount = 0;    // important! must reset q.ackcount
     q->ack_failures = 0;
 }
@@ -630,7 +637,7 @@ static void process_ack(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
 
     q->snd_sn_to_node[sn_mod] = NULL;
     segment *s = ADDRESS_FOR(segment, head, node);
-    nmq_delete_segment(s);
+    recycle_segment(&q->pool, s);
 }
 
 static void count_repeat_acks(NMQ *q, IUINT32 maxack) {
@@ -994,6 +1001,8 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
         dlist_init(lists[i]);
     }
 
+    nmq_set_segment_pool_cap(q, NMQ_SEGMENT_POOL_CAP_DEF);
+
     q->nrcv_que = 0;
     q->nrcv_buf = 0;
     q->nsnd_que = 0;
@@ -1034,6 +1043,8 @@ static inline void allocate_mem(NMQ *q) {
 
     q->acklist = (IUINT32 *) nmq_malloc(q->ackmaxnum * sizeof(IUINT32) * 2);
     memset(q->acklist, 0, q->ackmaxnum * sizeof(IUINT32) * 2);
+
+    init_segment_pool(&q->pool, q->NMQ_MSS, q->pool.CAP);
 }
 
 // either send_done or recv_done exists, it means self or peer closed.
@@ -1060,27 +1071,28 @@ void nmq_destroy(NMQ *q) {
     nmq_free(q->snd_sn_to_node);
     nmq_free(q->rcv_sn_to_node);;
     nmq_free(q->acklist);
-    dlist *lists[] = {&q->snd_buf, &q->snd_que, &q->rcv_buf, &q->rcv_que, NULL};
+    // remember to destroy pool.seg_list.
+    dlist *lists[] = {&q->snd_buf, &q->snd_que, &q->rcv_buf, &q->rcv_que, &q->pool.seg_list, NULL};
     for (int i = 0; lists[i]; i++) {
         dlnode *node = 0, *nxt = 0;
         FOR_EACH(node, nxt, lists[i]) {
             segment *s = ADDRESS_FOR(segment, head, node);
             dlist_remove_node(node);
-            nmq_delete_segment(s);
+            delete_segment(s);
         }
     }
+    q->pool.CAP = q->pool.left = 0;
     nmq_free(q);
 }
 
-static inline segment *nmq_new_segment(IUINT32 data_size) {
+static inline segment *new_segment(IUINT32 data_size) {
     segment *s = (segment *) nmq_malloc(sizeof(segment) + data_size);
     memset(s, 0, sizeof(segment) + data_size);  // the order must no be wrong.
-
     dlist_init(&s->head);
     return s;
 }
 
-void nmq_delete_segment(segment *seg) {
+void delete_segment(segment *seg) {
     if (seg) {
         nmq_free(seg);
     }
@@ -1202,8 +1214,58 @@ void nmq_set_interval(NMQ *q, IUINT32 interval) {
         }
     }
 }
+
 void nmq_set_fc_ratio(NMQ *q, float ratio) {
     if (!q->inited && ratio > 0.0f && ratio < 1.0f) {
         q->fc.ssth_alpha = ratio;
     }
 }
+
+// seg_pool {
+void init_segment_pool(segment_pool *pool, IUINT32 MTU, IUINT8 CAP) {
+    dlist_init(&pool->seg_list);
+    pool->left = CAP;
+    pool->CAP = CAP;
+    pool->MTU = MTU;
+    for (IUINT8 i = 0; i < CAP; i++) {
+        segment *s = new_segment(MTU);
+        dlist_add_tail(&pool->seg_list, &s->head);
+    }
+}
+
+// len should be just mtu
+segment *obtain_segment(segment_pool *pool) {
+    dlnode *node = 0, *nxt = 0;
+    FOR_EACH(node, nxt, &pool->seg_list) {
+        segment *s = ADDRESS_FOR(segment, head, node);
+        dlist_remove_node(node);
+        pool->left--;
+
+        return s;
+    }
+
+    segment *s = new_segment(pool->MTU);
+    return s;
+}
+
+void recycle_segment(segment_pool *pool, segment *s) {
+    if (!s) {
+        return;
+    }
+    dlist_remove_node(&s->head);    // ensure the node is removed from list
+    if (pool->left >= pool->CAP) {  // simply delete it if pool full
+        delete_segment(s);
+        return;
+    }
+    memset(s, 0, sizeof(*s));
+    dlist_add_tail(&pool->seg_list, &s->head);
+    pool->left++;
+}
+
+
+void nmq_set_segment_pool_cap(NMQ *q, IUINT8 CAP) {
+    if (!q->inited) {
+        q->pool.CAP = CAP;
+    }
+}
+//} seg_pool
