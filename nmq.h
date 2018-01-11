@@ -71,6 +71,8 @@ extern "C" {
 
 #define NMQ_FC_ALPHA_DEF 0.5
 
+#define NMQ_SEGMENT_POOL_CAP_DEF 16
+
 #ifndef OFFSETOF
 #define OFFSETOF(TYPE, MEMBER) \
     ((size_t)&(((TYPE *)0)->MEMBER))
@@ -79,16 +81,6 @@ extern "C" {
 #ifndef ADDRESS_FOR
 #define ADDRESS_FOR(TYPE, MEMBER, mem_addr) \
     ((TYPE*)(((char *)(mem_addr)) - OFFSETOF(TYPE, MEMBER)))
-#endif
-
-#ifndef WDBLOCK
-#ifdef EWOULDBLOCK
-#define WDBLOCK(ERR) \
-    ((ERR) == EAGAIN || (ERR) == EWOULDBLOCK)
-#else
-#define WDBLOCK(ERR) \
-    ((ERR) == EAGAIN)
-#endif
 #endif
 
 typedef struct segment_s {
@@ -107,9 +99,15 @@ typedef struct segment_s {
     IUINT32 una;
     IUINT32 sendts;     // to estimate rtt
     IUINT32 len;
-    char data[1];   // don't use pointer
+    char data[1];   // don't use pointer and must stay at last position
 } segment;
 
+typedef struct segment_pool_s {
+    dlist seg_list;
+    IUINT8 left;
+    IUINT8 CAP;
+    IUINT32 MTU;
+} segment_pool;
 
 typedef struct fc_s {
     float ssth_alpha;
@@ -158,6 +156,8 @@ typedef struct nmq_s {
     dlist snd_buf;
     dlist snd_que;
     dlnode **snd_sn_to_node;       // the size is MAX_SND_BUF_NUM
+
+    segment_pool pool;
 
     IUINT32 rcv_nxt;
     dlist rcv_buf;    // use array to stroe it
@@ -238,8 +238,6 @@ void nmq_set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd);
 void nmq_set_fc_on(NMQ *q, IUINT8 on);
 
 
-void nmq_delete_segment(segment *seg);
-
 void nmq_start(NMQ *q); // first memeory allocation
 void nmq_set_ssthresh(NMQ *q, IUINT32 ssthresh);
 
@@ -257,6 +255,8 @@ void nmq_set_max_attempt(NMQ *q, IUINT32 max_try, nmq_failure_cb cb);
 void nmq_set_interval(NMQ *q, IUINT32 interval);
 
 void nmq_set_fc_ratio(NMQ *q, float ratio);
+
+void nmq_set_segment_pool_cap(NMQ *q, IUINT8 CAP);
 
 #ifdef __cplusplus
 }
