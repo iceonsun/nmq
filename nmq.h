@@ -241,8 +241,6 @@ void nmq_set_fc_on(NMQ *q, IUINT8 on);
 void nmq_start(NMQ *q); // first memeory allocation
 void nmq_set_ssthresh(NMQ *q, IUINT32 ssthresh);
 
-void nmq_set_init_cwnd(NMQ *q, IUINT32 cwnd);
-
 void nmq_set_trouble_tolerance(NMQ *q, IUINT8 n_tolerance);
 
 void nmq_set_dup_acks_limit(NMQ *q, IUINT8 lim);
@@ -254,7 +252,7 @@ void nmq_set_max_attempt(NMQ *q, IUINT32 max_try, nmq_failure_cb cb);
 
 void nmq_set_interval(NMQ *q, IUINT32 interval);
 
-void nmq_set_fc_ratio(NMQ *q, float ratio);
+void nmq_set_fc_alpha(NMQ *q, float alpha);
 
 void nmq_set_segment_pool_cap(NMQ *q, IUINT8 CAP);
 
