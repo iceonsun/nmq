@@ -769,7 +769,7 @@ void fc_init(NMQ *q, fc_s *fc) {
     fc->DUP_ACK_LIM = NMQ_DUP_ACK_LIM_DEF;
     fc->MSS = q->NMQ_MSS;
     fc->ssth_alpha = NMQ_FC_ALPHA_DEF;
-    fc->cwnd = NMQ_CWND_INIT;
+    fc->cwnd = q->MAX_SND_BUF_NUM;
     fc->incr = fc->cwnd * fc->MSS;
     fc->ssthresh = NMQ_SSTHRESH_DEF;
     fc->in_trouble = 0;
@@ -881,7 +881,7 @@ static inline void update_rto(NMQ *q) {
 // wnd ops {
 static inline IUINT32 get_snd_cwnd(NMQ *q) {
     IUINT32 cwnd = MIN(q->MAX_SND_BUF_NUM, q->rmt_wnd); // attention to how get_snd_cwnd is used
-    if (q->fc_on) {    // todo
+    if (q->fc_on) {
         return MIN(cwnd, q->fc.cwnd);
     }
     return cwnd;
@@ -957,6 +957,7 @@ void nmq_set_output_cb(NMQ *q, nmq_output_cb cb) {
 void nmq_set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd) {
     nmq->MAX_SND_BUF_NUM = sndwnd;
     nmq->MAX_RCV_BUF_NUM = rcvwnd;
+    nmq->fc.cwnd = sndwnd;
 }
 
 void nmq_set_fc_on(NMQ *q, IUINT8 on) {
@@ -971,7 +972,6 @@ void nmq_shutdown_send(NMQ *q) {
     if (!q->fin_sn) {
         q->fin_sn = 1;
         append_fin(q);
-    } else {
     }
 }
 
@@ -1166,12 +1166,6 @@ void nmq_set_ssthresh(NMQ *q, IUINT32 ssthresh) {
     }
 }
 
-void nmq_set_init_cwnd(NMQ *q, IUINT32 cwnd) {
-    if (!q->inited && cwnd) {
-        q->fc.cwnd = cwnd;
-    }
-}
-
 void nmq_set_trouble_tolerance(NMQ *q, IUINT8 n_tolerance) {
     if (!q->inited) {
         if (n_tolerance >= NMQ_TROUBLE_TOLERANCE_MIN && n_tolerance <= NMQ_TROUBLE_TOLERANCE_MAX) {
@@ -1215,9 +1209,9 @@ void nmq_set_interval(NMQ *q, IUINT32 interval) {
     }
 }
 
-void nmq_set_fc_ratio(NMQ *q, float ratio) {
-    if (!q->inited && ratio > 0.0f && ratio < 1.0f) {
-        q->fc.ssth_alpha = ratio;
+void nmq_set_fc_alpha(NMQ *q, float alpha) {
+    if (!q->inited && alpha > 0.0f && alpha < 1.0f) {
+        q->fc.ssth_alpha = alpha;
     }
 }
 
@@ -1261,7 +1255,6 @@ void recycle_segment(segment_pool *pool, segment *s) {
     dlist_add_tail(&pool->seg_list, &s->head);
     pool->left++;
 }
-
 
 void nmq_set_segment_pool_cap(NMQ *q, IUINT8 CAP) {
     if (!q->inited) {
