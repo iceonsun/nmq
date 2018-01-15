@@ -5,11 +5,11 @@
 #include <sys/time.h>
 #include "util.h"
 
-IINT64 MAX(IINT64 i1, IINT64 i2) {
+int64_t MAX(int64_t i1, int64_t i2) {
     return i1 > i2 ? i1 : i2;
 }
 
-IINT64 MIN(IINT64 i1, IINT64 i2) {
+int64_t MIN(int64_t i1, int64_t i2) {
     return i1 < i2 ? i1 : i2;
 }
 
@@ -22,15 +22,15 @@ static void itimeofday(long *sec, long *usec) {
 }
 
 /* get clock in millisecond 64 */
-static IINT64 iclock64(void) {
+static int64_t iclock64(void) {
     long s, u;
-    IINT64 value;
+    int64_t value;
     itimeofday(&s, &u);
-    value = ((IINT64) s) * 1000 + (u / 1000);
+    value = ((int64_t) s) * 1000 + (u / 1000);
     return value;
 }
 
 // get clock in millisecond
-IUINT32 iclock() {
-    return (IUINT32) (iclock64() & 0xfffffffful);
+uint32_t iclock() {
+    return (uint32_t) (iclock64() & 0xfffffffful);
 }
