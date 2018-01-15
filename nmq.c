@@ -96,6 +96,8 @@ static inline IINT8 dup_ack_limit(NMQ *q);
 
 static inline void init_stat(nmq_stat_t *stat);
 
+static inline void init_steady_state(NMQ *q);
+
 // return size of next packet in send_queue.
 static IUINT32 next_packet_size(dlist *list);
 
@@ -156,9 +158,11 @@ static void flush_snd_buf(NMQ *q) {
 
     // 1 mss can hold many complete segments
     dlnode *node = NULL, *nxt = NULL;
+    IUINT32 bytes_sent = 0;
     FOR_EACH(node, nxt, &q->snd_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
         IUINT8 need_send = 0;
+
         if (0 == s->n_sent) { // first time, need send
             need_send = 1;
             seg_first_sent(q, s);
@@ -178,6 +182,12 @@ static void flush_snd_buf(NMQ *q) {
         }
 
         if (need_send) {
+            if (q->steady_on) {
+                bytes_sent += (s->len + SEG_HEAD_SIZE);
+                if (bytes_sent > q->BYTES_PER_FLUSH) {
+                    break;
+                }
+            }
             s->n_sent++;
             s->wnd = rcv_wnd;
             s->una = q->rcv_nxt;    //  figure out diff among snd_una, una, rcv_nxt
@@ -185,7 +195,7 @@ static void flush_snd_buf(NMQ *q) {
             // note: s->cmd, s->conv, s->sn and s->frag must not be updated here. they are assigned values in #sndq2buf
             s->resendts = s->rto + current;
 
-            if (s->len + (p - buf) >= q->NMQ_MSS) {   // buf is not enough to hold another segment
+            if (s->len + (p - buf) >= q->MTU) {   // buf is not enough to hold another segment
                 nmq_output(q, buf, p - buf);  // emit buf first
                 p = buf;    // reset p to buf
             }
@@ -196,7 +206,6 @@ static void flush_snd_buf(NMQ *q) {
             if (s->n_sent > q->MAX_PKT_TRY) {
                 send_failed(q, s->sn);
             }
-
         }
     }
 
@@ -243,6 +252,9 @@ static IINT8 input_segment(NMQ *q, segment *s) {
 
     if ((s->sn < q->rcv_nxt) || (s->sn >= (q->rcv_nxt + q->MAX_RCV_BUF_NUM))) {  // out of range
         q->ack_failures++;
+        if (s->sn < q->rcv_nxt) {   // send ack if sn < q.rcv_nxt
+            set_ack_ts(q, s->sn, s->sendts);
+        }
         return NMQ_ERR_INVALID_SN;
     }
 
@@ -303,6 +315,7 @@ void nmq_flush(NMQ *q, IUINT32 current) {
 void nmq_start(NMQ *q) {
     if (!q->inited) {
         q->inited = 1;
+        init_steady_state(q);
         allocate_mem(q);
     }
 }
@@ -435,8 +448,8 @@ IINT32 do_send(NMQ *q, const char *data, const int len) {
     }
 
     const char *phead = data;
-    IUINT32 tot = len / q->NMQ_MSS;
-    tot = (len % q->NMQ_MSS) ? tot + 1 : tot;
+    IUINT32 tot = len / q->MSS;
+    tot = (len % q->MSS) ? tot + 1 : tot;
 
     if (tot > 255) {    // frag num is stored with IUINT8
         return ERR_DATA_TOO_LONG;
@@ -444,7 +457,7 @@ IINT32 do_send(NMQ *q, const char *data, const int len) {
 
 //  for (IUINT8 i = (IUINT8) (tot - 1); i >= 0; i--) {  caution!!! this is wrong because i > 0 is always true if i is IUINT8
     for (IUINT8 i = (IUINT8) tot; i > 0; i--) {     // frag order is n, n - 1 ... 0.
-        const IUINT32 slen = (i > 1) ? q->NMQ_MSS : (len - (tot - 1) * q->NMQ_MSS);
+        const IUINT32 slen = (i > 1) ? q->MSS : (len - (tot - 1) * q->MSS);
         segment *s = obtain_segment(&q->pool);
         s->conv = q->conv;
         s->cmd = CMD_DATA;
@@ -578,7 +591,7 @@ static void acks2peer(NMQ *q) {
     }
 
     const int UNIT = 2 * sizeof(IUINT32);
-    const IUINT32 max_nack = q->NMQ_MSS / UNIT;
+    const IUINT32 max_nack = q->MSS / UNIT;
     const IUINT32 tot = UNIT * max_nack;
     const IUINT32 ACKCNT = q->ackcount;
     for (int i = 0; i < ACKCNT; i++) {
@@ -767,7 +780,7 @@ void fc_init(NMQ *q, fc_s *fc) {
     memset(fc, 0, sizeof(fc_s));
     fc->TROUBLE_TOLERANCE = NMQ_TROUBLE_TOLERANCE_DEF;
     fc->DUP_ACK_LIM = NMQ_DUP_ACK_LIM_DEF;
-    fc->MSS = q->NMQ_MSS;
+    fc->MSS = q->MSS;
     fc->ssth_alpha = NMQ_FC_ALPHA_DEF;
     fc->cwnd = q->MAX_SND_BUF_NUM;
     fc->incr = fc->cwnd * fc->MSS;
@@ -899,18 +912,22 @@ static inline void update_rmt_wnd(NMQ *q, IUINT32 rmt_wnd) {
 
 // nmq utils {
 static inline IINT8 dup_ack_limit(NMQ *q) {
-    if (q->fc_on) {
-        return q->fc.DUP_ACK_LIM;
-    }
-    return NMQ_DUP_ACK_LIM_DEF;   // standard
+    return q->fc.DUP_ACK_LIM;
 }
-
 
 void init_stat(nmq_stat_t *stat) {
     stat->nrtt = 0;
     stat->nrtt_tot = 0;
     stat->bytes_send = 0;
     stat->bytes_send_tot = 0;
+}
+
+void init_steady_state(NMQ *q) {
+    if (q->steady_on) {
+        q->BYTES_PER_FLUSH = (IUINT32) ((q->MAX_SND_BUF_NUM * q->flush_interval / 1000.0) * q->MTU);
+    } else {
+        q->BYTES_PER_FLUSH = 0;
+    }
 }
 
 // return size of next packet in send_queue.
@@ -966,6 +983,11 @@ void nmq_set_fc_on(NMQ *q, IUINT8 on) {
     }
 }
 
+void nmq_set_steady(NMQ *q, IUINT8 steady_on) {
+    if (!q->inited) {
+        q->steady_on = steady_on;
+    }
+}
 //} nmq utils
 
 void nmq_shutdown_send(NMQ *q) {
@@ -982,12 +1004,14 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
 
     q->conv = conv;
     q->arg = arg;
+
     q->inited = 0;
     q->flush_interval = NMQ_FLUSH_INTERVAL_DEF;
 
     q->MAX_SND_BUF_NUM = NMQ_SND_BUF_NUM_DEF;   // must be initialized before rcv_sn_to_node
     q->MAX_RCV_BUF_NUM = NMQ_RCV_BUF_NUM_DEF;
-    q->NMQ_MSS = NMQ_MSS_DEF;
+    q->MTU = NMQ_MTU_DEF;
+    q->MSS = q->MTU - SEG_HEAD_SIZE;
 
     q->rmt_wnd = NMQ_RMT_WND_DEF;
 
@@ -1031,6 +1055,8 @@ NMQ *nmq_new(IUINT32 conv, void *arg) {
     q->peer_fin_sn = 0;
     q->fin_sn = 0;
 
+    q->steady_on = 1;
+    q->BYTES_PER_FLUSH = 0;     // initialized later
     return q;
 }
 
@@ -1044,7 +1070,7 @@ static inline void allocate_mem(NMQ *q) {
     q->acklist = (IUINT32 *) nmq_malloc(q->ackmaxnum * sizeof(IUINT32) * 2);
     memset(q->acklist, 0, q->ackmaxnum * sizeof(IUINT32) * 2);
 
-    init_segment_pool(&q->pool, q->NMQ_MSS, q->pool.CAP);
+    init_segment_pool(&q->pool, q->MSS, q->pool.CAP);
 }
 
 // either send_done or recv_done exists, it means self or peer closed.
@@ -1183,10 +1209,11 @@ void nmq_set_dup_acks_limit(NMQ *q, IUINT8 lim) {
 }
 
 // MSS <= MTU - SEG_HEAD_SIZE - sum(OTHER_PROTOCOL_HEAD_SIZE)
-void nmq_set_mss(NMQ *q, IUINT32 MSS) {
+void nmq_set_nmq_mtu(NMQ *q, IUINT32 MTU) {
     if (!q->inited) {
-        q->NMQ_MSS = MSS;
-        q->fc.MSS = MSS;
+        q->MTU = MTU;
+        q->MSS = MTU - SEG_HEAD_SIZE;
+        q->fc.MSS = MTU - SEG_HEAD_SIZE;
     }
 }
 
@@ -1261,4 +1288,5 @@ void nmq_set_segment_pool_cap(NMQ *q, IUINT8 CAP) {
         q->pool.CAP = CAP;
     }
 }
+
 //} seg_pool

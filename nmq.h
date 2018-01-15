@@ -65,7 +65,7 @@ extern "C" {
 #define NMQ_ERR_ACK_BUF_LEN (-20)
 #define NMQ_ERR_WRONG_INPUT (-21)
 // 1500 minus ip, udp  and kcp header size.
-#define NMQ_MSS_DEF 1400
+#define NMQ_MTU_DEF 1400
 #define NMQ_HEAD_SIZE 24
 #define SEG_HEAD_SIZE NMQ_HEAD_SIZE
 
@@ -192,7 +192,8 @@ typedef struct nmq_s {
     IINT32 MAX_PKT_TRY; // maximum times to send packet. or failure
     IINT8 state;
 
-    IUINT32 NMQ_MSS;    // not including head size. MSS + SEG_HEAD_SIZE + OTHER_PROTOCOL_HEAD_SIZE = MTU
+    IUINT32 MSS;    // not including head size. MSS + SEG_HEAD_SIZE + OTHER_PROTOCOL_HEAD_SIZE = MTU
+    IUINT32 MTU;
 
     IINT32 (*output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
 
@@ -201,6 +202,9 @@ typedef struct nmq_s {
     IUINT32 peer_fin_sn;
     char fin_sn;
 
+
+    IUINT8 steady_on;   // no blast send. default on.
+    IUINT32 BYTES_PER_FLUSH;
 } NMQ;
 
 typedef IINT32 (*nmq_output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
@@ -246,7 +250,7 @@ void nmq_set_trouble_tolerance(NMQ *q, IUINT8 n_tolerance);
 void nmq_set_dup_acks_limit(NMQ *q, IUINT8 lim);
 
 // MSS <= MTU - SEG_HEAD_SIZE - sum(OTHER_PROTOCOL_HEAD_SIZE)
-void nmq_set_mss(NMQ *q, IUINT32 MSS);
+void nmq_set_nmq_mtu(NMQ *q, IUINT32 MTU);
 
 void nmq_set_max_attempt(NMQ *q, IUINT32 max_try, nmq_failure_cb cb);
 
@@ -255,6 +259,8 @@ void nmq_set_interval(NMQ *q, IUINT32 interval);
 void nmq_set_fc_alpha(NMQ *q, float alpha);
 
 void nmq_set_segment_pool_cap(NMQ *q, IUINT8 CAP);
+
+void nmq_set_steady(NMQ *q, IUINT8 steady_on);
 
 #ifdef __cplusplus
 }
