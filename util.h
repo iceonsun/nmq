@@ -5,18 +5,18 @@
 #ifndef SOCKNM_UTIL_H
 #define SOCKNM_UTIL_H
 
-#include "ktype.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include <stdint.h>
 // caution!! this may occur error if not declared __cplusplus when compiling with c++ project
 
-IINT64 MAX(IINT64 i1, IINT64 i2);
+int64_t MAX(int64_t i1, int64_t i2);
 
-IINT64 MIN(IINT64 i1, IINT64 i2);
+int64_t MIN(int64_t i1, int64_t i2);
 
-IUINT32 iclock();
+uint32_t iclock();
 
 #ifdef __cplusplus
 }

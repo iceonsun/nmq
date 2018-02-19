@@ -5,11 +5,11 @@
 #ifndef SOCKNM_DLIST_H
 #define SOCKNM_DLIST_H
 
-#include "ktype.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include <stdint.h>
 
 // a_dlist should always be head of dlist
 #define FOR_EACH(it, nxt, list_head) \
@@ -29,7 +29,7 @@ void dlist_add_after(dlnode *node1, dlnode *node2);
 
 void dlist_remove_node(dlnode *node);
 
-IINT8 list_not_empty(dlist *list);
+int8_t list_not_empty(dlist *list);
 
 #ifdef __cplusplus
 }

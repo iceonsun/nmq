@@ -34,8 +34,8 @@ static inline void itimeofday(long *sec, long *usec) {
 #else
     static long mode = 0, addsec = 0;
     BOOL retval;
-    static IINT64 freq = 1;
-    IINT64 qpc;
+    static int64_t freq = 1;
+    int64_t qpc;
     if (mode == 0) {
         retval = QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
         freq = (freq == 0)? 1 : freq;
@@ -52,18 +52,18 @@ static inline void itimeofday(long *sec, long *usec) {
 }
 
 /* get clock in millisecond 64 */
-//static inline IINT64 iclock64(void)
+//static inline int64_t iclock64(void)
 //{
 //	long s, u;
-//	IINT64 value;
+//	int64_t value;
 //	itimeofday(&s, &u);
-//	value = ((IINT64)s) * 1000 + (u / 1000);
+//	value = ((int64_t)s) * 1000 + (u / 1000);
 //	return value;
 //}
 //
-//static inline IUINT32 iclock()
+//static inline uint32_t iclock()
 //{
-//	return (IUINT32)(iclock64() & 0xfffffffful);
+//	return (uint32_t)(iclock64() & 0xfffffffful);
 //}
 //
 /* sleep in millisecond */
@@ -108,14 +108,14 @@ public:
 
     int size() const { return _size; }
 
-    IUINT32 ts() const { return _ts; }
+    uint32_t ts() const { return _ts; }
 
-    void setts(IUINT32 ts) { _ts = ts; }
+    void setts(uint32_t ts) { _ts = ts; }
 
 protected:
     unsigned char *_ptr;
     int _size;
-    IUINT32 _ts;
+    uint32_t _ts;
 };
 
 // 均匀分布的随机数
@@ -207,7 +207,7 @@ public:
 
         DelayPacket *pkt = new DelayPacket(size, data);
         current = iclock();
-        IUINT32 delay = rttmin;
+        uint32_t delay = rttmin;
         if (rttmax > rttmin) delay += rand() % (rttmax - rttmin);
 //		fprintf(stderr, "delay: %dms\n", delay);
         pkt->setts(current + delay);
@@ -298,7 +298,7 @@ public:
     int tx2;
 
 protected:
-    IUINT32 current;
+    uint32_t current;
     int lostrate;
     int rttmin;
     int rttmax;

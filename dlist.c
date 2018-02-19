@@ -3,7 +3,7 @@
 
 #include "dlist.h"
 
-IINT8 list_not_empty(dlist *list) {
+int8_t list_not_empty(dlist *list) {
     return list != list->next;
 }
 

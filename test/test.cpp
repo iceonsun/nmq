@@ -58,20 +58,20 @@ void test(int mode)
     nmq_start(kcp1);
     nmq_start(kcp2);
 
-	IUINT32 current = iclock();
-	IUINT32 slap = current + 20;
-//	IUINT32 slap = current;
-	IUINT32 index = 0;
-	IUINT32 next = 0;
-	IINT64 sumrtt = 0;
+	uint32_t current = iclock();
+	uint32_t slap = current + 20;
+//	uint32_t slap = current;
+	uint32_t index = 0;
+	uint32_t next = 0;
+	int64_t sumrtt = 0;
 	int count = 0;
 	int maxrtt = 0;
 
 	char buffer[2000];
 	int hr;
-	IUINT32 cnt = 0;
+	uint32_t cnt = 0;
 
-	IUINT32 ts1 = iclock();
+	uint32_t ts1 = iclock();
 
 	while (1) {
 		isleep(1);
@@ -82,8 +82,8 @@ void test(int mode)
 
         // app -> peer 1
         for (; current >= slap; slap += 20) {
-            ((IUINT32*)buffer)[0] = index;
-            ((IUINT32*)buffer)[1] = current;
+            ((uint32_t*)buffer)[0] = index;
+            ((uint32_t*)buffer)[1] = current;
 
             // 发送上层协议包
 			if (nmq_send(kcp1, buffer, 8) > 0) {
@@ -105,7 +105,7 @@ void test(int mode)
             hr = vnet->recv(1, buffer, 2000);
             if (hr < 0) break;
 			// 如果 p1收到udp，则作为下层协议输入到kcp1
-            IINT32 ret =  nmq_input(kcp1, buffer, hr);
+            int32_t ret =  nmq_input(kcp1, buffer, hr);
 		}
 
 		while (1) {
@@ -123,9 +123,9 @@ void test(int mode)
 			hr = nmq_recv(kcp1, buffer, 2000);
 			// 没有收到包就退出
 			if (hr <= 0) break;
-			IUINT32 sn = *(IUINT32*)(buffer + 0);
-			IUINT32 ts = *(IUINT32*)(buffer + 4);
-			IUINT32 rtt = current - ts;
+			uint32_t sn = *(uint32_t*)(buffer + 0);
+			uint32_t ts = *(uint32_t*)(buffer + 4);
+			uint32_t rtt = current - ts;
 
 			if (sn != next) {
 				// 如果收到的包不连续
@@ -136,7 +136,7 @@ void test(int mode)
 			next++;
 			sumrtt += rtt;
 			count++;
-			if (rtt > (IUINT32)maxrtt) maxrtt = rtt;
+			if (rtt > (uint32_t)maxrtt) maxrtt = rtt;
 
 			fprintf(stderr, "[RECV] mode=%d sn=%d rtt=%d\n", mode, (int)sn, (int)rtt);
 		}
@@ -180,20 +180,20 @@ void test_shutdown_send(int mode)
     nmq_start(kcp1);
     nmq_start(kcp2);
 
-    IUINT32 current = iclock();
-    IUINT32 slap = current + 20;
-//	IUINT32 slap = current;
-    IUINT32 index = 0;
-    IUINT32 next = 0;
-    IINT64 sumrtt = 0;
+    uint32_t current = iclock();
+    uint32_t slap = current + 20;
+//	uint32_t slap = current;
+    uint32_t index = 0;
+    uint32_t next = 0;
+    int64_t sumrtt = 0;
     int count = 0;
     int maxrtt = 0;
 
     char buffer[2000];
     int hr;
-    IUINT32 cnt = 0;
+    uint32_t cnt = 0;
 
-    IUINT32 ts1 = iclock();
+    uint32_t ts1 = iclock();
 
     while (!g_done) {
         isleep(1);
@@ -203,8 +203,8 @@ void test_shutdown_send(int mode)
         nmq_update(kcp2, iclock());
 
         while (cnt < 10 && !g_done) {
-            ((IUINT32*)buffer)[0] = index;
-            ((IUINT32*)buffer)[1] = current;
+            ((uint32_t*)buffer)[0] = index;
+            ((uint32_t*)buffer)[1] = current;
 
             // 发送上层协议包
             if (nmq_send(kcp1, buffer, 8) > 0) {
@@ -231,7 +231,7 @@ void test_shutdown_send(int mode)
 //            fprintf(stderr, "peer 1. read buf to peer 1. nmq_input, hr: %d\n", hr);
             if (hr < 0) break;
             // 如果 p1收到udp，则作为下层协议输入到kcp1
-            IINT32 ret =  nmq_input(kcp1, buffer, hr);
+            int32_t ret =  nmq_input(kcp1, buffer, hr);
         }
 
         // kcp2接收到任何包都返回回去
@@ -251,9 +251,9 @@ void test_shutdown_send(int mode)
 //            fprintf(stderr, "peer 1. nmq_recv, hr: %d\n", hr);
             // 没有收到包就退出
             if (hr <= 0) break;
-            IUINT32 sn = *(IUINT32*)(buffer + 0);
-            IUINT32 ts = *(IUINT32*)(buffer + 4);
-            IUINT32 rtt = current - ts;
+            uint32_t sn = *(uint32_t*)(buffer + 0);
+            uint32_t ts = *(uint32_t*)(buffer + 4);
+            uint32_t rtt = current - ts;
 
             fprintf(stderr, "peer: %d, outer receive sn: %u, ts: %u\n", 1, sn, ts);
 
@@ -266,7 +266,7 @@ void test_shutdown_send(int mode)
             next++;
             sumrtt += rtt;
             count++;
-            if (rtt > (IUINT32)maxrtt) maxrtt = rtt;
+            if (rtt > (uint32_t)maxrtt) maxrtt = rtt;
 
             fprintf(stderr, "[RECV] mode=%d sn=%d rtt=%d\n", mode, (int)sn, (int)rtt);
         }

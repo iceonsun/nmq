@@ -14,52 +14,52 @@
 #define INTERVAL_MAX_MS 10000
 #define INTERVAL_MIN_MS 10
 
-const IUINT8 CMD_INVALID = 0;
-const IUINT8 CMD_DATA = 1;
-const IUINT8 CMD_ACK = 2;
-const IUINT8 CMD_WND_REQ = 3;    // ask peer wnd
-const IUINT8 CMD_WND_ANS = 4;   // tell my wnd to peer. split req and ans to avoid repeatedly sending cmd_wnd_X
-const IUINT8 CMD_FIN = 5;
+const uint8_t CMD_INVALID = 0;
+const uint8_t CMD_DATA = 1;
+const uint8_t CMD_ACK = 2;
+const uint8_t CMD_WND_REQ = 3;    // ask peer wnd
+const uint8_t CMD_WND_ANS = 4;   // tell my wnd to peer. split req and ans to avoid repeatedly sending cmd_wnd_X
+const uint8_t CMD_FIN = 5;
 
-static IINT32 sndq2buf(NMQ *q);
+static int32_t sndq2buf(NMQ *q);
 
-static IINT32 rcvbuf2q(NMQ *q);
+static int32_t rcvbuf2q(NMQ *q);
 
-static IINT32 do_recv(NMQ *q, char *buf, const int buf_size);
+static int32_t do_recv(NMQ *q, char *buf, const int buf_size);
 
-static IINT32 do_send(NMQ *q, const char *data, const int len);
+static int32_t do_send(NMQ *q, const char *data, const int len);
 
 static inline void append_fin(NMQ *q);
 
 static inline void fin_ops(NMQ *q, char cmd);
 
-static IINT8 input_segment(NMQ *q, segment *s);
+static int8_t input_segment(NMQ *q, segment *s);
 
 static void flush_snd_buf(NMQ *q);
 
 static void flush(NMQ *q);
 
-static void send_failed(NMQ *q, IUINT32 sn);
+static void send_failed(NMQ *q, uint32_t sn);
 
 
 // acks
-static void set_ack_ts(NMQ *q, IUINT32 sn, IUINT32 ts_send);
+static void set_ack_ts(NMQ *q, uint32_t sn, uint32_t ts_send);
 
-static void process_ack(NMQ *q, IUINT32 sn, IUINT32 ts_send);
+static void process_ack(NMQ *q, uint32_t sn, uint32_t ts_send);
 
-static void input_acks(NMQ *q, const char *p, IUINT32 len, const IUINT32 old_una);
+static void input_acks(NMQ *q, const char *p, uint32_t len, const uint32_t old_una);
 
-static void count_repeat_acks(NMQ *q, IUINT32 maxack);
+static void count_repeat_acks(NMQ *q, uint32_t maxack);
 
 static void acks2peer(NMQ *q);
 
 // una
-static void process_una(NMQ *q, IUINT32 una);
+static void process_una(NMQ *q, uint32_t una);
 
 static inline void update_una(NMQ *q);
 
 // window probe {
-static inline void do_window_probe_or_answer(NMQ *q, IUINT16 cmd);
+static inline void do_window_probe_or_answer(NMQ *q, uint16_t cmd);
 
 static inline void window_probe_build_req_if_need(NMQ *q);
 
@@ -70,36 +70,36 @@ static void window_probe_ans2peer(NMQ *q);
 // fc
 void fc_init(NMQ *q, fc_s *fc);
 
-void fc_pkt_loss(fc_s *fc, IUINT32 max_lost_sn, IUINT32 n_loss, IUINT32 n_timeout);
+void fc_pkt_loss(fc_s *fc, uint32_t max_lost_sn, uint32_t n_loss, uint32_t n_timeout);
 
-void fc_input_acks(fc_s *fc, const IUINT32 una, IUINT32 nacks);
+void fc_input_acks(fc_s *fc, const uint32_t una, uint32_t nacks);
 
-void fc_normal_acks(fc_s *fc, IUINT32 nacks);
+void fc_normal_acks(fc_s *fc, uint32_t nacks);
 
 // rtt & rto
-static inline void update_rtt(NMQ *q, IUINT32 sn, IUINT32 sendts);
+static inline void update_rtt(NMQ *q, uint32_t sn, uint32_t sendts);
 
-static void rtt_estimator(NMQ *q, rto_helper_s *rter, IUINT32 rtt);
+static void rtt_estimator(NMQ *q, rto_helper_s *rter, uint32_t rtt);
 
 static inline void update_rto(NMQ *q);
 
 // wnd
-static inline IUINT32 get_snd_cwnd(NMQ *q);
+static inline uint32_t get_snd_cwnd(NMQ *q);
 
-static inline IINT32 avaible_rcv_wnd(NMQ *q);
+static inline int32_t avaible_rcv_wnd(NMQ *q);
 
-static inline void update_rmt_wnd(NMQ *q, IUINT32 rmt_wnd);
+static inline void update_rmt_wnd(NMQ *q, uint32_t rmt_wnd);
 
 
 // nmq utils
-static inline IINT8 dup_ack_limit(NMQ *q);
+static inline int8_t dup_ack_limit(NMQ *q);
 
 static inline void init_stat(nmq_stat_t *stat);
 
 static inline void init_steady_state(NMQ *q);
 
 // return size of next packet in send_queue.
-static IUINT32 next_packet_size(dlist *list);
+static uint32_t next_packet_size(dlist *list);
 
 static inline void seg_first_sent(NMQ *q, segment *s);
 
@@ -108,7 +108,7 @@ static inline void seg_timeout(NMQ *q, segment *s);
 static inline void seg_reach_fastack(NMQ *q, segment *s);
 
 // mem ops {
-static inline segment *new_segment(IUINT32 data_size);
+static inline segment *new_segment(uint32_t data_size);
 
 static inline void delete_segment(segment *seg);
 
@@ -119,7 +119,7 @@ static inline void *nmq_free(void *addr);
 static inline void allocate_mem(NMQ *q);
 
 // segment pool
-void init_segment_pool(segment_pool *pool, IUINT32 MTU, IUINT8 CAP);
+void init_segment_pool(segment_pool *pool, uint32_t MTU, uint8_t CAP);
 
 segment *obtain_segment(segment_pool *pool);
 
@@ -137,7 +137,7 @@ static inline int is_self_closed(NMQ *q);
 char *encode_seg_and_data(segment *s, char *buf);
 
 // utils
-static inline IUINT32 modsn(IUINT32 sn, IUINT32 moder);
+static inline uint32_t modsn(uint32_t sn, uint32_t moder);
 
 // global variables
 static nmq_malloc_fn gs_malloc_fn = malloc;
@@ -145,23 +145,23 @@ static nmq_free_fn gs_free_fn = free;
 
 
 static void flush_snd_buf(NMQ *q) {
-    IINT32 rcv_wnd = avaible_rcv_wnd(q);
-    IINT32 resent = dup_ack_limit(q);
+    int32_t rcv_wnd = avaible_rcv_wnd(q);
+    int32_t resent = dup_ack_limit(q);
 
-    IUINT32 n_loss = 0;
-    IUINT32 max_lost_sn = 0;
-    IUINT32 n_timeout = 0;
-    IUINT32 current = q->current;
+    uint32_t n_loss = 0;
+    uint32_t max_lost_sn = 0;
+    uint32_t n_timeout = 0;
+    uint32_t current = q->current;
 
     char buf[NMQ_BUF_SIZE] = {0};//caution!!! must be larger than MSS, or invalid memory access will occur!! e.g BUFSIZ
     char *p = buf;
 
     // 1 mss can hold many complete segments
     dlnode *node = NULL, *nxt = NULL;
-    IUINT32 bytes_sent = 0;
+    uint32_t bytes_sent = 0;
     FOR_EACH(node, nxt, &q->snd_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
-        IUINT8 need_send = 0;
+        uint8_t need_send = 0;
 
         if (0 == s->n_sent) { // first time, need send
             need_send = 1;
@@ -237,7 +237,7 @@ static void flush(NMQ *q) {
     check_send_done(q);
 }
 
-static void send_failed(NMQ *q, IUINT32 sn) {
+static void send_failed(NMQ *q, uint32_t sn) {
     if (q->state == NMQ_STATE_SEND_FAILURE) {
         if (q->failure_cb) {
             (q->failure_cb)(q, sn);
@@ -245,7 +245,7 @@ static void send_failed(NMQ *q, IUINT32 sn) {
     }
 }
 
-static IINT8 input_segment(NMQ *q, segment *s) {
+static int8_t input_segment(NMQ *q, segment *s) {
     if (s->conv != q->conv) {
         return NMQ_ERR_CONV_DIFF;
     }
@@ -292,10 +292,10 @@ static IINT8 input_segment(NMQ *q, segment *s) {
     return 0;
 }
 
-void nmq_update(NMQ *q, IUINT32 current) {
+void nmq_update(NMQ *q, uint32_t current) {
     assert(q->inited == 1);
 
-    IINT32 df = current - q->current;  // df cannot < 0
+    int32_t df = current - q->current;  // df cannot < 0
     if (df > 10000 || df < 0) {
         df = q->flush_interval;
     }
@@ -306,7 +306,7 @@ void nmq_update(NMQ *q, IUINT32 current) {
 }
 
 // ignore it
-void nmq_flush(NMQ *q, IUINT32 current) {
+void nmq_flush(NMQ *q, uint32_t current) {
     assert(q->inited == 1);
     q->current = current;
     flush(q);
@@ -322,24 +322,24 @@ void nmq_start(NMQ *q) {
 
 // <0 for error.
 // >= 0 for size inputed
-IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
+int32_t nmq_input(NMQ *q, const char *buf, const int buf_size) {
     const char *p = buf;
-    IINT32 size = buf_size;
-    const IUINT32 old_una = q->snd_una;
-    IINT32 tot = 0;
+    int32_t size = buf_size;
+    const uint32_t old_una = q->snd_una;
+    int32_t tot = 0;
 
     while (size && p) {
         if (size < SEG_HEAD_SIZE) {
             return NMQ_ERR_MSG_BROKEN;
         }
 
-        IUINT32 conv;
+        uint32_t conv;
         p = decode_uint32(&conv, p);
         if (conv != q->conv) {  // just return. if conv does not match, the remaining data is consider invalid.
             return NMQ_ERR_CONV_DIFF;
         }
 
-        IUINT8 cmd;
+        uint8_t cmd;
         p = decode_uint8(&cmd, p);
 
         if (CMD_DATA != cmd && CMD_ACK != cmd && CMD_WND_REQ != cmd
@@ -347,9 +347,9 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
             return NMQ_ERR_WRONG_CMD;
         }
 
-        IUINT32 sn, len = 0, ts_send, una;
-        IUINT16 wnd;
-        IUINT8 frag;
+        uint32_t sn, len = 0, ts_send, una;
+        uint16_t wnd;
+        uint8_t frag;
         p = decode_uint32(&sn, p);
         p = decode_uint8(&frag, p);
         p = decode_uint16(&wnd, p);
@@ -383,7 +383,7 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
             if (s->len) {
                 memcpy(s->data, p, s->len);
             }
-            IINT8 ret = input_segment(q, s);
+            int8_t ret = input_segment(q, s);
             if (ret != 0) {
                 recycle_segment(&q->pool, s);
 //                return ret;  should not return. may appear duplicate segs. and they are valid pkt
@@ -408,10 +408,10 @@ IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size) {
     return tot;
 }
 
-IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
+int32_t do_recv(NMQ *q, char *buf, const int buf_size) {
     // todo: how large should buf_size be for datgram pkt?
     // https://stackoverflow.com/questions/2862071/how-large-should-my-recv-buffer-be-when-calling-recv-in-the-socket-library
-    IINT32 rcvq_size = next_packet_size(&q->rcv_que);
+    int32_t rcvq_size = next_packet_size(&q->rcv_que);
     if (rcvq_size > buf_size) { // simply drop packet if no enough buf
         return NMQ_ERR_MSG_SIZE;
     }
@@ -424,7 +424,7 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
             memcpy(p, s->data, s->len);
         }
         p += s->len;
-        const IINT8 frag = s->frag;
+        const int8_t frag = s->frag;
 
         dlist_remove_node(node);
         recycle_segment(&q->pool, s);
@@ -442,22 +442,22 @@ IINT32 do_recv(NMQ *q, char *buf, const int buf_size) {
     return p - buf;
 }
 
-IINT32 do_send(NMQ *q, const char *data, const int len) {
+int32_t do_send(NMQ *q, const char *data, const int len) {
     if (is_self_closed(q)) {
         return NMQ_ERR_SEND_ON_SHUTDOWNED;
     }
 
     const char *phead = data;
-    IUINT32 tot = len / q->MSS;
+    uint32_t tot = len / q->MSS;
     tot = (len % q->MSS) ? tot + 1 : tot;
 
-    if (tot > 255) {    // frag num is stored with IUINT8
+    if (tot > 255) {    // frag num is stored with uint8_t
         return ERR_DATA_TOO_LONG;
     }
 
-//  for (IUINT8 i = (IUINT8) (tot - 1); i >= 0; i--) {  caution!!! this is wrong because i > 0 is always true if i is IUINT8
-    for (IUINT8 i = (IUINT8) tot; i > 0; i--) {     // frag order is n, n - 1 ... 0.
-        const IUINT32 slen = (i > 1) ? q->MSS : (len - (tot - 1) * q->MSS);
+//  for (uint8_t i = (uint8_t) (tot - 1); i >= 0; i--) {  caution!!! this is wrong because i > 0 is always true if i is uint8_t
+    for (uint8_t i = (uint8_t) tot; i > 0; i--) {     // frag order is n, n - 1 ... 0.
+        const uint32_t slen = (i > 1) ? q->MSS : (len - (tot - 1) * q->MSS);
         segment *s = obtain_segment(&q->pool);
         s->conv = q->conv;
         s->cmd = CMD_DATA;
@@ -476,10 +476,10 @@ IINT32 do_send(NMQ *q, const char *data, const int len) {
 
     q->nsnd_que += tot;
 
-    return (IINT32) (phead - data);
+    return (int32_t) (phead - data);
 }
 
-IINT32 nmq_output(NMQ *q, const char *data, const int len) {
+int32_t nmq_output(NMQ *q, const char *data, const int len) {
     assert(q->output_cb != NULL);
 
     if (len > 0 || len == NMQ_SEND_EOF) {
@@ -488,7 +488,7 @@ IINT32 nmq_output(NMQ *q, const char *data, const int len) {
     return NMQ_NO_DATA;
 }
 
-IINT32 nmq_send(NMQ *q, const char *data, const int len) {
+int32_t nmq_send(NMQ *q, const char *data, const int len) {
     if (!data || len <= 0) {
         return 0;
     }
@@ -514,7 +514,7 @@ void fin_ops(NMQ *q, char cmd) {
 }
 
 // < 0 for error.
-IINT32 nmq_recv(NMQ *q, char *buf, const int buf_size) {
+int32_t nmq_recv(NMQ *q, char *buf, const int buf_size) {
     if (!q->inited) {
         return NMQ_ERR_UNITIALIZED;
     }
@@ -534,8 +534,8 @@ IINT32 nmq_recv(NMQ *q, char *buf, const int buf_size) {
 }
 
 // nmq private functions
-static IINT32 rcvbuf2q(NMQ *q) {
-    IINT32 tot = 0;
+static int32_t rcvbuf2q(NMQ *q) {
+    int32_t tot = 0;
     dlnode *node = 0, *nxt = 0;
     FOR_EACH(node, nxt, &q->rcv_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
@@ -555,11 +555,11 @@ static IINT32 rcvbuf2q(NMQ *q) {
     return tot;
 }
 
-static IINT32 sndq2buf(NMQ *q) {
-    IINT32 tot = 0;
+static int32_t sndq2buf(NMQ *q) {
+    int32_t tot = 0;
 
     // local send buf/que len should not be a bottleneck.
-    IUINT32 cwnd = get_snd_cwnd(q);
+    uint32_t cwnd = get_snd_cwnd(q);
 
     // flow control. num(pending segments in snd_buf) <= cwnd
     dlnode *node = 0, *nxt = 0;
@@ -590,12 +590,12 @@ static void acks2peer(NMQ *q) {
         return;
     }
 
-    const int UNIT = 2 * sizeof(IUINT32);
-    const IUINT32 max_nack = q->MSS / UNIT;
-    const IUINT32 tot = UNIT * max_nack;
-    const IUINT32 ACKCNT = q->ackcount;
+    const int UNIT = 2 * sizeof(uint32_t);
+    const uint32_t max_nack = q->MSS / UNIT;
+    const uint32_t tot = UNIT * max_nack;
+    const uint32_t ACKCNT = q->ackcount;
     for (int i = 0; i < ACKCNT; i++) {
-        IUINT32 sn;
+        uint32_t sn;
         decode_uint32(&sn, (const char *) (i * 2 + q->acklist));
     }
 
@@ -613,7 +613,7 @@ static void acks2peer(NMQ *q) {
     char *p = (char *) q->acklist;
     char buf[NMQ_BUF_SIZE] = {0};
 
-    IUINT32 ackcnt = ACKCNT;
+    uint32_t ackcnt = ACKCNT;
     while (ackcnt > 0) {
         if (ackcnt > max_nack) {
             s->len = max_nack * UNIT;
@@ -636,8 +636,8 @@ static void acks2peer(NMQ *q) {
 
 // ack(sn) sent by peer, telling local that peer itself received segment(sn). The segment(sn) is sent by local.
 // this op will remove acked segs
-static void process_ack(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
-    IUINT32 sn_mod = modsn(sn, q->MAX_SND_BUF_NUM);
+static void process_ack(NMQ *q, uint32_t sn, uint32_t ts_send) {
+    uint32_t sn_mod = modsn(sn, q->MAX_SND_BUF_NUM);
     if (sn < q->snd_una || sn >= q->snd_nxt || !q->snd_sn_to_node[sn_mod]) { // sn 0 is valid!!!
         return;
     }
@@ -653,7 +653,7 @@ static void process_ack(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
     recycle_segment(&q->pool, s);
 }
 
-static void count_repeat_acks(NMQ *q, IUINT32 maxack) {
+static void count_repeat_acks(NMQ *q, uint32_t maxack) {
     dlnode *node = 0, *nxt = 0;
     FOR_EACH(node, nxt, &q->snd_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
@@ -666,17 +666,17 @@ static void count_repeat_acks(NMQ *q, IUINT32 maxack) {
 }
 
 // must before input_segments
-static void input_acks(NMQ *q, const char *p, IUINT32 len, const IUINT32 old_una) {
-    IUINT32 maxack = 0;
-    const int UNIT = 2 * sizeof(IUINT32);
-    IUINT32 nacks = len / UNIT;
+static void input_acks(NMQ *q, const char *p, uint32_t len, const uint32_t old_una) {
+    uint32_t maxack = 0;
+    const int UNIT = 2 * sizeof(uint32_t);
+    uint32_t nacks = len / UNIT;
 
     while (len >= UNIT) {
         len -= UNIT;
-        IUINT32 ack_sn, ack_ts_send;
+        uint32_t ack_sn, ack_ts_send;
         p = decode_uint32(&ack_sn, p);
         p = decode_uint32(&ack_ts_send, p);
-        maxack = (IUINT32) MAX(maxack, ack_sn);
+        maxack = (uint32_t) MAX(maxack, ack_sn);
         process_ack(q, ack_sn, ack_ts_send);    // will delete segments
     }
 
@@ -688,16 +688,16 @@ static void input_acks(NMQ *q, const char *p, IUINT32 len, const IUINT32 old_una
     fc_input_acks(&q->fc, q->snd_una, nacks);
 }
 
-static void set_ack_ts(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
+static void set_ack_ts(NMQ *q, uint32_t sn, uint32_t ts_send) {
     if (q->ackcount == q->ackmaxnum) {
-        const size_t UNIT = 2 * sizeof(IUINT32);
-        IUINT32 newnum = q->ackmaxnum << 1;
+        const size_t UNIT = 2 * sizeof(uint32_t);
+        uint32_t newnum = q->ackmaxnum << 1;
         void *newbuf = nmq_malloc(newnum * UNIT);
 
         memcpy(newbuf, q->acklist, q->ackcount * UNIT);
         nmq_free(q->acklist);
 
-        q->acklist = (IUINT32 *) newbuf;
+        q->acklist = (uint32_t *) newbuf;
         q->ackmaxnum = newnum;
     }
 
@@ -713,7 +713,7 @@ static void set_ack_ts(NMQ *q, IUINT32 sn, IUINT32 ts_send) {
 
 
 // una {
-static void process_una(NMQ *q, IUINT32 una) {
+static void process_una(NMQ *q, uint32_t una) {
     dlnode *node = 0, *nxt = 0;
     FOR_EACH(node, nxt, &q->snd_buf) {
         segment *s = ADDRESS_FOR(segment, head, node);
@@ -756,7 +756,7 @@ static inline void window_probe_build_req_if_need(NMQ *q) {
     }
 }
 
-static void do_window_probe_or_answer(NMQ *q, IUINT16 cmd) {
+static void do_window_probe_or_answer(NMQ *q, uint16_t cmd) {
     segment seg = {0};
     seg.conv = q->conv;
     seg.len = 0;
@@ -789,7 +789,7 @@ void fc_init(NMQ *q, fc_s *fc) {
     fc->max_lost_sn = 0;
 }
 
-void fc_pkt_loss(fc_s *fc, IUINT32 max_lost_sn, IUINT32 n_loss, IUINT32 n_timeout) {
+void fc_pkt_loss(fc_s *fc, uint32_t max_lost_sn, uint32_t n_loss, uint32_t n_timeout) {
     if (!fc->in_trouble && (n_loss + n_timeout) >= fc->TROUBLE_TOLERANCE) {
         fc->in_trouble = 1;
         fc->max_lost_sn = max_lost_sn;
@@ -802,7 +802,7 @@ void fc_pkt_loss(fc_s *fc, IUINT32 max_lost_sn, IUINT32 n_loss, IUINT32 n_timeou
     }
 }
 
-void fc_input_acks(fc_s *fc, const IUINT32 una, IUINT32 nacks) {
+void fc_input_acks(fc_s *fc, const uint32_t una, uint32_t nacks) {
     if (fc->in_trouble) {
         if (una > fc->max_lost_sn) {    // new data arrives
             fc->cwnd = fc->ssthresh + 1;
@@ -818,7 +818,7 @@ void fc_input_acks(fc_s *fc, const IUINT32 una, IUINT32 nacks) {
 
 }
 
-void fc_normal_acks(fc_s *fc, IUINT32 nacks) {
+void fc_normal_acks(fc_s *fc, uint32_t nacks) {
     if (fc->cwnd <= fc->ssthresh) {  // slow start
         fc->cwnd = MIN(fc->cwnd + nacks, fc->ssthresh + 1);
         fc->incr = fc->cwnd * fc->MSS;
@@ -832,19 +832,19 @@ void fc_normal_acks(fc_s *fc, IUINT32 nacks) {
 // } fc
 
 // rtt & rto {
-static inline void update_rtt(NMQ *q, IUINT32 sn, IUINT32 sendts) {
+static inline void update_rtt(NMQ *q, uint32_t sn, uint32_t sendts) {
     segment *s = ADDRESS_FOR(segment, head, q->snd_sn_to_node[modsn(sn, q->MAX_SND_BUF_NUM)]);
     if (s->sendts == sendts) {
-        IUINT32 rtt = q->current - sendts;
+        uint32_t rtt = q->current - sendts;
         q->stat.nrtt++;
         q->stat.nrtt_tot += rtt;
         rtt_estimator(q, &q->rto_helper, rtt);
     }
 }
 
-static void rtt_estimator(NMQ *q, rto_helper_s *rter, IUINT32 rtt) {
+static void rtt_estimator(NMQ *q, rto_helper_s *rter, uint32_t rtt) {
     // copied from linux kernel. chinese explaination: http://www.pagefault.info/?p=430
-    IINT64 m = rtt;
+    int64_t m = rtt;
     if (m <= 0) {
         m = 1;
     }
@@ -885,33 +885,33 @@ static void rtt_estimator(NMQ *q, rto_helper_s *rter, IUINT32 rtt) {
 
 static inline void update_rto(NMQ *q) {
     rto_helper_s *rter = &q->rto_helper;
-    IUINT32 rto1 = q->rto;
+    uint32_t rto1 = q->rto;
     q->rto = MAX(NMQ_RTO_MIN, MIN(NMQ_RTO_MAX, (rter->srtt >> 3) + rter->rttvar));
 }
 // } rtt & rto
 
 
 // wnd ops {
-static inline IUINT32 get_snd_cwnd(NMQ *q) {
-    IUINT32 cwnd = MIN(q->MAX_SND_BUF_NUM, q->rmt_wnd); // attention to how get_snd_cwnd is used
+static inline uint32_t get_snd_cwnd(NMQ *q) {
+    uint32_t cwnd = MIN(q->MAX_SND_BUF_NUM, q->rmt_wnd); // attention to how get_snd_cwnd is used
     if (q->fc_on) {
         return MIN(cwnd, q->fc.cwnd);
     }
     return cwnd;
 }
 
-static inline IINT32 avaible_rcv_wnd(NMQ *q) {
+static inline int32_t avaible_rcv_wnd(NMQ *q) {
     return q->MAX_RCV_BUF_NUM - q->nrcv_buf;
 }
 
-static inline void update_rmt_wnd(NMQ *q, IUINT32 rmt_wnd) {
+static inline void update_rmt_wnd(NMQ *q, uint32_t rmt_wnd) {
     q->rmt_wnd = rmt_wnd;
 }
 // } wnd ops
 
 
 // nmq utils {
-static inline IINT8 dup_ack_limit(NMQ *q) {
+static inline int8_t dup_ack_limit(NMQ *q) {
     return q->fc.DUP_ACK_LIM;
 }
 
@@ -924,16 +924,16 @@ void init_stat(nmq_stat_t *stat) {
 
 void init_steady_state(NMQ *q) {
     if (q->steady_on) {
-        q->BYTES_PER_FLUSH = (IUINT32) ((q->MAX_SND_BUF_NUM * q->flush_interval / 1000.0) * q->MTU);
+        q->BYTES_PER_FLUSH = (uint32_t) ((q->MAX_SND_BUF_NUM * q->flush_interval / 1000.0) * q->MTU);
     } else {
         q->BYTES_PER_FLUSH = 0;
     }
 }
 
 // return size of next packet in send_queue.
-static IUINT32 next_packet_size(dlist *list) {
+static uint32_t next_packet_size(dlist *list) {
     dlnode *it = 0, *nxt = 0;
-    IUINT32 len = 0;
+    uint32_t len = 0;
     FOR_EACH(it, nxt, list) {
         segment *s = ADDRESS_FOR(segment, head, it);
         len += s->len;
@@ -971,19 +971,19 @@ void nmq_set_output_cb(NMQ *q, nmq_output_cb cb) {
     }
 }
 
-void nmq_set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd) {
+void nmq_set_wnd_size(NMQ *nmq, uint32_t sndwnd, uint32_t rcvwnd) {
     nmq->MAX_SND_BUF_NUM = sndwnd;
     nmq->MAX_RCV_BUF_NUM = rcvwnd;
     nmq->fc.cwnd = sndwnd;
 }
 
-void nmq_set_fc_on(NMQ *q, IUINT8 on) {
+void nmq_set_fc_on(NMQ *q, uint8_t on) {
     if (!q->inited) {
         q->fc_on = on;
     }
 }
 
-void nmq_set_steady(NMQ *q, IUINT8 steady_on) {
+void nmq_set_steady(NMQ *q, uint8_t steady_on) {
     if (!q->inited) {
         q->steady_on = steady_on;
     }
@@ -998,7 +998,7 @@ void nmq_shutdown_send(NMQ *q) {
 }
 
 // memory ops. {
-NMQ *nmq_new(IUINT32 conv, void *arg) {
+NMQ *nmq_new(uint32_t conv, void *arg) {
     NMQ *q = (NMQ *) nmq_malloc(sizeof(NMQ));
     memset(q, 0, sizeof(NMQ));
 
@@ -1067,8 +1067,8 @@ static inline void allocate_mem(NMQ *q) {
     q->rcv_sn_to_node = (dlist **) nmq_malloc(sizeof(dlnode *) * q->MAX_RCV_BUF_NUM);
     memset(q->rcv_sn_to_node, 0, sizeof(dlnode *) * q->MAX_RCV_BUF_NUM);
 
-    q->acklist = (IUINT32 *) nmq_malloc(q->ackmaxnum * sizeof(IUINT32) * 2);
-    memset(q->acklist, 0, q->ackmaxnum * sizeof(IUINT32) * 2);
+    q->acklist = (uint32_t *) nmq_malloc(q->ackmaxnum * sizeof(uint32_t) * 2);
+    memset(q->acklist, 0, q->ackmaxnum * sizeof(uint32_t) * 2);
 
     init_segment_pool(&q->pool, q->MSS, q->pool.CAP);
 }
@@ -1111,7 +1111,7 @@ void nmq_destroy(NMQ *q) {
     nmq_free(q);
 }
 
-static inline segment *new_segment(IUINT32 data_size) {
+static inline segment *new_segment(uint32_t data_size) {
     segment *s = (segment *) nmq_malloc(sizeof(segment) + data_size);
     memset(s, 0, sizeof(segment) + data_size);  // the order must no be wrong.
     dlist_init(&s->head);
@@ -1168,23 +1168,23 @@ char *encode_seg_and_data(segment *s, char *buf) {
 
 
 // util {
-IUINT32 nmq_get_conv(const char *buf) {
+uint32_t nmq_get_conv(const char *buf) {
     if (buf) {
-        IUINT32 conv;
+        uint32_t conv;
         decode_uint32(&conv, buf);
         return conv;
     }
     return 0;
 }
 
-static inline IUINT32 modsn(IUINT32 sn, IUINT32 moder) {
+static inline uint32_t modsn(uint32_t sn, uint32_t moder) {
     return (sn + moder) % moder;
 }
 
 // } util
 
 // nmq helper functions
-void nmq_set_ssthresh(NMQ *q, IUINT32 ssthresh) {
+void nmq_set_ssthresh(NMQ *q, uint32_t ssthresh) {
     if (!q->inited) {
         if (ssthresh > NMQ_SSTHRESH_MIN) {
             q->fc.ssthresh = ssthresh;
@@ -1192,7 +1192,7 @@ void nmq_set_ssthresh(NMQ *q, IUINT32 ssthresh) {
     }
 }
 
-void nmq_set_trouble_tolerance(NMQ *q, IUINT8 n_tolerance) {
+void nmq_set_trouble_tolerance(NMQ *q, uint8_t n_tolerance) {
     if (!q->inited) {
         if (n_tolerance >= NMQ_TROUBLE_TOLERANCE_MIN && n_tolerance <= NMQ_TROUBLE_TOLERANCE_MAX) {
             q->fc.TROUBLE_TOLERANCE = n_tolerance;
@@ -1200,7 +1200,7 @@ void nmq_set_trouble_tolerance(NMQ *q, IUINT8 n_tolerance) {
     }
 }
 
-void nmq_set_dup_acks_limit(NMQ *q, IUINT8 lim) {
+void nmq_set_dup_acks_limit(NMQ *q, uint8_t lim) {
     if (!q->inited) {
         if (lim >= NMQ_DUP_ACK_LIM_MIN && lim <= NMQ_DUP_ACK_LIM_MAX) {
             q->fc.DUP_ACK_LIM = lim;
@@ -1209,7 +1209,7 @@ void nmq_set_dup_acks_limit(NMQ *q, IUINT8 lim) {
 }
 
 // MSS <= MTU - SEG_HEAD_SIZE - sum(OTHER_PROTOCOL_HEAD_SIZE)
-void nmq_set_nmq_mtu(NMQ *q, IUINT32 MTU) {
+void nmq_set_nmq_mtu(NMQ *q, uint32_t MTU) {
     if (!q->inited) {
         q->MTU = MTU;
         q->MSS = MTU - SEG_HEAD_SIZE;
@@ -1217,14 +1217,14 @@ void nmq_set_nmq_mtu(NMQ *q, IUINT32 MTU) {
     }
 }
 
-void nmq_set_max_attempt(NMQ *q, IUINT32 max_try, nmq_failure_cb cb) {
+void nmq_set_max_attempt(NMQ *q, uint32_t max_try, nmq_failure_cb cb) {
     if (!q->inited) {
         q->MAX_PKT_TRY = max_try > 0 ? max_try : NMQ_MAX_TRY;
         q->failure_cb = cb;
     }
 }
 
-void nmq_set_interval(NMQ *q, IUINT32 interval) {
+void nmq_set_interval(NMQ *q, uint32_t interval) {
     if (!q->inited) {
         if (interval > INTERVAL_MAX_MS) {
             q->flush_interval = INTERVAL_MAX_MS;
@@ -1243,12 +1243,12 @@ void nmq_set_fc_alpha(NMQ *q, float alpha) {
 }
 
 // seg_pool {
-void init_segment_pool(segment_pool *pool, IUINT32 MTU, IUINT8 CAP) {
+void init_segment_pool(segment_pool *pool, uint32_t MTU, uint8_t CAP) {
     dlist_init(&pool->seg_list);
     pool->left = CAP;
     pool->CAP = CAP;
     pool->MTU = MTU;
-    for (IUINT8 i = 0; i < CAP; i++) {
+    for (uint8_t i = 0; i < CAP; i++) {
         segment *s = new_segment(MTU);
         dlist_add_tail(&pool->seg_list, &s->head);
     }
@@ -1283,7 +1283,7 @@ void recycle_segment(segment_pool *pool, segment *s) {
     pool->left++;
 }
 
-void nmq_set_segment_pool_cap(NMQ *q, IUINT8 CAP) {
+void nmq_set_segment_pool_cap(NMQ *q, uint8_t CAP) {
     if (!q->inited) {
         q->pool.CAP = CAP;
     }

@@ -6,7 +6,7 @@
 #define SOCKNM_MARQ_H
 
 #if defined(_WIN32) || defined(WIN32)
-#error posix only now!
+#error "posix only now!"
 #endif
 
 #ifdef __cplusplus
@@ -85,49 +85,49 @@ extern "C" {
 
 typedef struct segment_s {
     dlist head;
-    IUINT32 resendts;
-    IINT32 n_sent;
-    IINT32 rto;
-    IUINT16 dupacks;
+    uint32_t resendts;
+    int32_t n_sent;
+    int32_t rto;
+    uint16_t dupacks;
 
     // data that will be sent to peer in the order they appear here. 24 bytes in total
-    IUINT32 conv;
-    IUINT8 cmd;            // send, ack, wnd_probe
-    IUINT32 sn;
-    IUINT8 frag;
-    IUINT16 wnd;     // tell peer self wnd size. (65535 * 1500 / (2 ^ 20) / 8 = 12.5MB
-    IUINT32 una;
-    IUINT32 sendts;     // to estimate rtt
-    IUINT32 len;
+    uint32_t conv;
+    uint8_t cmd;            // send, ack, wnd_probe
+    uint32_t sn;
+    uint8_t frag;
+    uint16_t wnd;     // tell peer self wnd size. (65535 * 1500 / (2 ^ 20) / 8 = 12.5MB
+    uint32_t una;
+    uint32_t sendts;     // to estimate rtt
+    uint32_t len;
     char data[1];   // don't use pointer and must stay at last position
 } segment;
 
 typedef struct segment_pool_s {
     dlist seg_list;
-    IUINT8 left;
-    IUINT8 CAP;
-    IUINT32 MTU;
+    uint8_t left;
+    uint8_t CAP;
+    uint32_t MTU;
 } segment_pool;
 
 typedef struct fc_s {
     float ssth_alpha;
     float incr;     // float is always 32bit large whether in 32-bit or 64-bit machine
-    IUINT32 cwnd;    // congestion window. maximum is MAX_SND_BUF_NUM. unit: MTU
-    IUINT32 ssthresh;   // unit: MSS + SEG_HEAD_SIZE
-    IUINT8 TROUBLE_TOLERANCE;
-    IINT8 DUP_ACK_LIM;
-    IUINT8 in_trouble;
-    IUINT32 max_lost_sn;
-    IUINT32 MSS;
+    uint32_t cwnd;    // congestion window. maximum is MAX_SND_BUF_NUM. unit: MTU
+    uint32_t ssthresh;   // unit: MSS + SEG_HEAD_SIZE
+    uint8_t TROUBLE_TOLERANCE;
+    int8_t DUP_ACK_LIM;
+    uint8_t in_trouble;
+    uint32_t max_lost_sn;
+    uint32_t MSS;
 } fc_s;
 
 
 typedef struct rto_helper_s {
-    IUINT32 srtt;
-    IUINT32 mdev;
-    IUINT32 mdev_max;
-    IUINT32 rttvar;
-    IUINT32 rtt_seq;
+    uint32_t srtt;
+    uint32_t mdev;
+    uint32_t mdev_max;
+    uint32_t rttvar;
+    uint32_t rtt_seq;
 } rto_helper_s;
 
 typedef void *(*nmq_malloc_fn)(size_t size);
@@ -135,132 +135,132 @@ typedef void *(*nmq_malloc_fn)(size_t size);
 typedef void (*nmq_free_fn)(void *ptr);
 
 typedef struct nmq_stat_t {
-    IUINT32 nrtt;
-    IUINT64 nrtt_tot;
-    IUINT32 bytes_send;
-    IUINT32 bytes_send_tot;
+    uint32_t nrtt;
+    uint64_t nrtt_tot;
+    uint32_t bytes_send;
+    uint32_t bytes_send_tot;
 } nmq_stat_t;
 
 typedef struct nmq_s {
-    IUINT32 conv;
+    uint32_t conv;
     void *arg;
 
-    IUINT32 current;
-    IINT8 inited;
-    IUINT16 flush_interval;
+    uint32_t current;
+    int8_t inited;
+    uint16_t flush_interval;
 
-    IUINT32 rmt_wnd;
+    uint32_t rmt_wnd;
 
-    IUINT32 snd_una;    // sent unacknowledged for this client
-    IUINT32 snd_nxt;
+    uint32_t snd_una;    // sent unacknowledged for this client
+    uint32_t snd_nxt;
     dlist snd_buf;
     dlist snd_que;
     dlnode **snd_sn_to_node;       // the size is MAX_SND_BUF_NUM
 
     segment_pool pool;
 
-    IUINT32 rcv_nxt;
+    uint32_t rcv_nxt;
     dlist rcv_buf;    // use array to stroe it
     dlnode **rcv_sn_to_node; // sn: &seg.head    // the size is MAX_RCV_BUF_NUM
     dlist rcv_que;
 
-    IUINT32 nrcv_que;    // number of packet in receive queue now
-    IUINT32 nrcv_buf;    // number of packets in receive buf now
-    IUINT32 nsnd_que;
+    uint32_t nrcv_que;    // number of packet in receive queue now
+    uint32_t nrcv_buf;    // number of packets in receive buf now
+    uint32_t nsnd_que;
     // estimate bandwidth. set this number to a number larger than bandwidth. unit: MSS + SEG_HEAD_SIZE
-    IUINT32 MAX_SND_BUF_NUM;    // use limited or unlimited que?? current is limited que
-    IUINT32 MAX_RCV_BUF_NUM;
+    uint32_t MAX_SND_BUF_NUM;    // use limited or unlimited que?? current is limited que
+    uint32_t MAX_RCV_BUF_NUM;
 
-    IUINT32 ackmaxnum;
-    IUINT32 *acklist;  // acklist[i] is sn, acklist[i]+1 is ts_send. size is 2 * MAX_RCV_BUF_NUM
-    IUINT32 ackcount;
-    IUINT32 ack_failures;
+    uint32_t ackmaxnum;
+    uint32_t *acklist;  // acklist[i] is sn, acklist[i]+1 is ts_send. size is 2 * MAX_RCV_BUF_NUM
+    uint32_t ackcount;
+    uint32_t ack_failures;
 
-    IUINT8 fc_on;
+    uint8_t fc_on;
     fc_s fc;
 
-    IUINT32 rto;
+    uint32_t rto;
     nmq_stat_t stat;
 
-    IUINT8 nodelay;
+    uint8_t nodelay;
 
-    IUINT32 ts_probe_wait;
-    IUINT8 probe_pending;
+    uint32_t ts_probe_wait;
+    uint8_t probe_pending;
 
     rto_helper_s rto_helper;
 
-    IINT32 MAX_PKT_TRY; // maximum times to send packet. or failure
-    IINT8 state;
+    int32_t MAX_PKT_TRY; // maximum times to send packet. or failure
+    int8_t state;
 
-    IUINT32 MSS;    // not including head size. MSS + SEG_HEAD_SIZE + OTHER_PROTOCOL_HEAD_SIZE = MTU
-    IUINT32 MTU;
+    uint32_t MSS;    // not including head size. MSS + SEG_HEAD_SIZE + OTHER_PROTOCOL_HEAD_SIZE = MTU
+    uint32_t MTU;
 
-    IINT32 (*output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
+    int32_t (*output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
 
-    void (*failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
+    void (*failure_cb)(struct nmq_s *nmq, uint32_t cause_sn);
 
-    IUINT32 peer_fin_sn;
+    uint32_t peer_fin_sn;
     char fin_sn;
 
 
-    IUINT8 steady_on;   // no blast send. default on.
-    IUINT32 BYTES_PER_FLUSH;
+    uint8_t steady_on;   // no blast send. default on.
+    uint32_t BYTES_PER_FLUSH;
 } NMQ;
 
-typedef IINT32 (*nmq_output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
+typedef int32_t (*nmq_output_cb)(const char *data, const int len, struct nmq_s *nmq, void *arg);
 
-typedef void (*nmq_failure_cb)(struct nmq_s *nmq, IUINT32 cause_sn);
+typedef void (*nmq_failure_cb)(struct nmq_s *nmq, uint32_t cause_sn);
 
-void nmq_update(NMQ *q, IUINT32 current);
+void nmq_update(NMQ *q, uint32_t current);
 
 // we regard
-void nmq_flush(NMQ *q, IUINT32 current);
+void nmq_flush(NMQ *q, uint32_t current);
 
 // upper <-> nmq
-IINT32 nmq_send(NMQ *q, const char *data, const int len);
+int32_t nmq_send(NMQ *q, const char *data, const int len);
 
 void nmq_shutdown_send(NMQ *q);
 
 // > 0 for specifc reason.
 // < 0 if buf is too small and -retval is size that buf should be.
-IINT32 nmq_recv(NMQ *q, char *buf, const int buf_size);
+int32_t nmq_recv(NMQ *q, char *buf, const int buf_size);
 
-IINT32 nmq_output(NMQ *q, const char *data, const int len);
+int32_t nmq_output(NMQ *q, const char *data, const int len);
 
-IINT32 nmq_input(NMQ *q, const char *buf, const int buf_size);
+int32_t nmq_input(NMQ *q, const char *buf, const int buf_size);
 
-NMQ *nmq_new(IUINT32 conv, void *arg);
+NMQ *nmq_new(uint32_t conv, void *arg);
 
 void nmq_destroy(NMQ *q);
 
-IUINT32 nmq_get_conv(const char *buf);
+uint32_t nmq_get_conv(const char *buf);
 
 void nmq_set_output_cb(NMQ *q, nmq_output_cb cb);
 
-void nmq_set_wnd_size(NMQ *nmq, IUINT32 sndwnd, IUINT32 rcvwnd);
+void nmq_set_wnd_size(NMQ *nmq, uint32_t sndwnd, uint32_t rcvwnd);
 
-void nmq_set_fc_on(NMQ *q, IUINT8 on);
+void nmq_set_fc_on(NMQ *q, uint8_t on);
 
 
 void nmq_start(NMQ *q); // first memeory allocation
-void nmq_set_ssthresh(NMQ *q, IUINT32 ssthresh);
+void nmq_set_ssthresh(NMQ *q, uint32_t ssthresh);
 
-void nmq_set_trouble_tolerance(NMQ *q, IUINT8 n_tolerance);
+void nmq_set_trouble_tolerance(NMQ *q, uint8_t n_tolerance);
 
-void nmq_set_dup_acks_limit(NMQ *q, IUINT8 lim);
+void nmq_set_dup_acks_limit(NMQ *q, uint8_t lim);
 
 // MSS <= MTU - SEG_HEAD_SIZE - sum(OTHER_PROTOCOL_HEAD_SIZE)
-void nmq_set_nmq_mtu(NMQ *q, IUINT32 MTU);
+void nmq_set_nmq_mtu(NMQ *q, uint32_t MTU);
 
-void nmq_set_max_attempt(NMQ *q, IUINT32 max_try, nmq_failure_cb cb);
+void nmq_set_max_attempt(NMQ *q, uint32_t max_try, nmq_failure_cb cb);
 
-void nmq_set_interval(NMQ *q, IUINT32 interval);
+void nmq_set_interval(NMQ *q, uint32_t interval);
 
 void nmq_set_fc_alpha(NMQ *q, float alpha);
 
-void nmq_set_segment_pool_cap(NMQ *q, IUINT8 CAP);
+void nmq_set_segment_pool_cap(NMQ *q, uint8_t CAP);
 
-void nmq_set_steady(NMQ *q, IUINT8 steady_on);
+void nmq_set_steady(NMQ *q, uint8_t steady_on);
 
 #ifdef __cplusplus
 }
