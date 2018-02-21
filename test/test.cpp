@@ -14,7 +14,7 @@
 #include "test.h"
 #include "../nmq.h"
 
-#define MAX_SN 5000
+#define MAX_SN 1000
 // 模拟网络
 LatencySimulator *vnet;
 
